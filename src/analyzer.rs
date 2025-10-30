@@ -13,7 +13,7 @@ struct Symbol {
 }
 
 enum SymbolKind {
-    Variable {  },
+    Variable { initialized: bool },
     Function { params: Vec<Symbol> },
 }
 #[derive(Debug)]
@@ -53,28 +53,75 @@ impl SemanticAnalyzer {
                 if self.scope_count != 0 {
                     return Err(AnalyzerError::InvalidNode("function declaration inside block".to_string()))
                 }
-                let name = match *ident {
-                    ParserNode::Var(id) => id,
-                    _ => return Err(AnalyzerError::InvalidNode("function declaration must have ident".into()))
-                };
+                let name = self.get_ident(*ident)?;
                 self.declare_function(&name)?;
 
                 self.analyze_node(*block)?
 
             },
             ParserNode::Declare { ident, exp } => {
-                let name = match *ident {
-                    ParserNode::Var(id) => id,
-                    _ => return Err(AnalyzerError::InvalidNode("declaration must have ident".into()))
-                };
-                self.declare_variable(&name)?;
+                let name = self.get_ident(*ident)?;
+
+                match exp {
+                    Some(n) => {
+                        self.analyze_node(*n)?;
+                        self.declare_variable(&name, true)?;
+                    },
+                    None => self.declare_variable(&name, false)?,
+                }
+                
             },
+            ParserNode::Assign { left, right } => {
+                let name = self.get_ident(*left)?;
+
+                if !self.is_declared(&name)? {
+                    return Err(AnalyzerError::UndeclaredVar(name));
+                }
+                self.initialize_variable(&name)?;
+
+                self.analyze_node(*right)?;
+
+            },
+            ParserNode::If { cond, block } => {
+
+                self.analyze_node(*cond)?;
+                self.analyze_node(*block)?;
+            },
+            ParserNode::Return { exp } => {
+                self.analyze_node(*exp)?;
+            },
+
+            ParserNode::Add {left, right} | ParserNode::Sub {left, right} |
+            ParserNode::Mul {left, right} | ParserNode::Div {left, right} |
+            ParserNode::Mod {left, right} | ParserNode::ShiftLeft {left, right} |
+            ParserNode::ShiftRight {left, right} | ParserNode::Greater {left, right} |
+            ParserNode::GreaterEqual {left, right} | ParserNode::Less {left, right} | 
+            ParserNode::LessEqual {left, right} | ParserNode::Equal {left, right} |
+            ParserNode::NotEqual {left, right} | ParserNode::BitwiseAnd {left, right} |
+            ParserNode::BitwiseXor {left, right} | ParserNode::BitwiseOr {left, right} => {
+                self.analyze_node(*left)?;
+                self.analyze_node(*right)?;
+            },
+
+            ParserNode::Neg { val } | ParserNode::Complement { val } |
+            ParserNode::Not { val } | ParserNode::SubExp { val } => {
+                self.analyze_node(*val)?;
+            },
+
+            ParserNode::Const(_) => {
+
+            },
+            ParserNode::Var(var) => {
+                self.is_initialized(&var)?;
+            },
+            
+
             _ => return Err(AnalyzerError::InvalidNode("unknown node".to_string()))
         }
         Ok(())
     }
 
-    fn declare_variable(&mut self, name: &String) -> Result<(), AnalyzerError> {
+    fn declare_variable(&mut self, name: &String, initialized: bool) -> Result<(), AnalyzerError> {
         if self.is_declared(name)? {
             return Err(AnalyzerError::AlreadyDeclared("variable already exists".into()));
         }
@@ -84,10 +131,24 @@ impl SemanticAnalyzer {
             name.clone(), 
             Symbol {
                 name: name.to_string(), 
-                kind: SymbolKind::Variable {  }, 
+                kind: SymbolKind::Variable { initialized: initialized }, 
                 scope: scope
             },
         );
+        Ok(())
+    }
+
+    fn initialize_variable(&mut self, name: &String) -> Result<(), AnalyzerError> {
+        match self.current_table()?.get_mut(name) {
+            Some(s) => {
+                if let SymbolKind::Variable { initialized } = &mut s.kind {
+                    *initialized = true;
+                } else {
+                    return Err(AnalyzerError::InvalidNode("not a variable".into()))
+                }
+            },
+            None => return Err(AnalyzerError::UndeclaredVar(name.clone()))
+        }
         Ok(())
     }
 
@@ -115,20 +176,44 @@ impl SemanticAnalyzer {
     }
 
     fn is_declared(&mut self, var: &String) -> Result<bool, AnalyzerError> {
-        if self.current_table()?.contains_key(var) {
-            return Ok(true)
-        } else {
-            return Ok(false)
+
+        for (_, table) in self.symbol_table.iter().enumerate() {
+            if table.contains_key(var) {
+                return Ok(true)
+            }
         }
+        Ok(false)
     }
 
+    fn is_initialized(&mut self, var: &String) -> Result<bool, AnalyzerError> {
+        for (_, table) in self.symbol_table.iter().enumerate() {
+            match table.get(var) {
+                Some(s) => {
+                    if let SymbolKind::Variable { initialized } = s.kind {
+                        return Ok(initialized)
+                    }
+                },
+                None => (),
+            }    
+        }
+        Err(AnalyzerError::UndeclaredVar(var.clone()))
+    }
+
+    pub fn get_ident(&self, ident: ParserNode) -> Result<String, AnalyzerError> {
+        match ident {
+            ParserNode::Var(id) => Ok(id),
+            _ => return Err(AnalyzerError::InvalidNode("left expression must be a variable".into()))
+        }   
+    }
 
     pub fn print(&self) {
+        print!("Symbol Table:");
         for (i, t) in self.symbol_table.iter().enumerate() {
-            print!("\nSCOPE {}:\n\t", i);
+            print!("(");
             for s in t.keys() {
-                print!("{} ", s);
+                print!(" {}", s);
             }
+            print!(" )");
         }
     }
 

@@ -109,6 +109,10 @@ impl Parser {
             Token::Assign => {
                 self.read_token();
                 let b = self.parse_logical_or();
+                if self.next_token != Token::Semicolon {
+                    return self.err("STMT: Assign => missing ;");
+                }
+                self.read_token();
                 a = ParserNode::Assign { 
                     left: Box::from(a), right: Box::from(b), 
                 };
@@ -378,7 +382,7 @@ impl Parser {
         if self.next_token != Token::EoF {
             self.next_token = self.lexer.next_token().expect("Erro (rt)");
         } 
-        print!(" {:?}", self.next_token);
+        //print!(" {:?}", self.next_token);
     }
 
     fn err(&self, msg: &str) -> ParserNode {

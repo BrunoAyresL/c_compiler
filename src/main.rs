@@ -24,11 +24,14 @@ fn main() {
     let mut analyzer = new_analyzer();
     let res = analyzer.analyze(program_node);
     match res {
-        Err(e) => println!("Erro: {:?}", e),
-        _ => (),
+        Err(e) => {
+            println!("Erro: {:?}", e);
+            analyzer.print();
+        },
+        _ => println!("program is valid"),
         
     }
-    analyzer.print();
+    
     /*
     println!("assembly:\n{}", program_node.gen_assembly());
     fs::write("output.s", program_node.gen_assembly()).expect("can't create file");

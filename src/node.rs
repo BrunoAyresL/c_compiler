@@ -1,7 +1,7 @@
 use std::{sync::atomic::{AtomicUsize, Ordering}};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
-
+#[derive(Debug)]
 pub enum ParserNode {
     // block
     Block(Vec<ParserNode>),
@@ -9,7 +9,6 @@ pub enum ParserNode {
     // statement (declaration)
     FuncDecl {ident: Box<ParserNode>, block: Box<ParserNode>},
     Declare {ident: Box<ParserNode>, exp: Option<Box<ParserNode>>},
-    VarInit {left: Box<ParserNode>, right: Box<ParserNode>},
 
     // statement
     Assign {left: Box<ParserNode>, right: Box<ParserNode>},
@@ -347,9 +346,6 @@ impl ParserNode {
                     }
                 }
                 
-            }
-            ParserNode::VarInit{ left, right } => {
-                format!("   int {} = {};\n",left.to_string(), right.to_string())
             }
 
             ParserNode::Assign { left, right } => {
