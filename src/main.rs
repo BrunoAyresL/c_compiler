@@ -1,11 +1,12 @@
 use std::{fs, process::Command};
-use crate::parser::new_parser;
+use crate::{analyzer::{new_analyzer}, parser::new_parser};
 
 pub mod lexer;
 pub mod parser;
 pub mod codegen;
 pub mod token;
 pub mod node;
+pub mod analyzer;
 
 fn main() {
     let input = fs::read_to_string(&"code.c")
@@ -13,13 +14,22 @@ fn main() {
 
     println!("code.c input:\n{input}");
 
-
     let mut parser = new_parser(input.as_str());
     println!("\nparsing...");
     let program_node = parser.parse();
-    println!("result:\n");
+    println!("\nresult:\n");
     println!("{}", program_node.to_string());
 
+    println!("\nanalyzing...");
+    let mut analyzer = new_analyzer();
+    let res = analyzer.analyze(program_node);
+    match res {
+        Err(e) => println!("Erro: {:?}", e),
+        _ => (),
+        
+    }
+    analyzer.print();
+    /*
     println!("assembly:\n{}", program_node.gen_assembly());
     fs::write("output.s", program_node.gen_assembly()).expect("can't create file");
     Command::new("gcc")
@@ -28,6 +38,6 @@ fn main() {
         .arg("out")
         .spawn()
         .expect("Failed");
-
+    */
 }
 

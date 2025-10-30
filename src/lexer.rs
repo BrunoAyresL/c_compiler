@@ -3,7 +3,6 @@ use crate::token::Token;
 
 pub struct Lexer {
     input: String,
-
     curr: usize,
     ch: u8,
 
@@ -26,16 +25,16 @@ impl Lexer {
         return self.input.as_bytes()[self.curr + 1];
     }
 
-    fn read_char(&mut self) -> u8 {
+    fn read_char(&mut self) {
         self.curr += 1;
         if self.curr >= self.input.len() {
             self.ch = 0;
         } else {
             self.ch = self.input.as_bytes()[self.curr];
         }
-        self.ch
     }
-    fn read_int(&mut self) -> usize { // lê a constante (int)
+
+    fn read_int(&mut self) -> usize {
         let start = self.curr;
         while self.ch.is_ascii_digit() {
             self.read_char();
@@ -44,7 +43,8 @@ impl Lexer {
         let num_str = self.input[start..self.curr].to_string();
         num_str.parse().unwrap()
     }
-    fn read_ident(&mut self) -> String {  // lê o identificador (variável)
+
+    fn read_ident(&mut self) -> String {
         let start = self.curr;
         while self.ch.is_ascii_alphanumeric() || self.ch == b'_' {
             self.read_char();
@@ -79,7 +79,7 @@ impl Lexer {
             b'|' => {
                 if self.peek() == b'|' {
                     self.read_char();
-                    Token::LogicaOr
+                    Token::LogicalOr
                 } else {
                     Token::BitwiseOr
                 }
@@ -124,6 +124,8 @@ impl Lexer {
                     Token::Assign
                 }
             }
+
+            // keywords
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
                 let ident = self.read_ident();
                 return Ok(match ident.as_str() {
@@ -134,6 +136,8 @@ impl Lexer {
                     _ => Token::Ident(ident),
                 });
             },
+            
+            // const
             b'0'..=b'9' => return Ok(Token::Int(self.read_int())),
             0 => Token::EoF,
             _ => Token::Invalid

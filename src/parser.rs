@@ -50,16 +50,16 @@ impl Parser {
             },
             Token::IntType => {
                 self.read_token();
-                let id = self.parse_factor();
+                let id = self.parse_logical_or();
                 match self.next_token {
                     Token::Assign => {
                         self.read_token();
-                        let exp = self.parse_exp();
+                        let exp = self.parse_logical_or();
                         if self.next_token != Token::Semicolon {
                             return self.err("STMT: var declaration => missing ;");
                         }
                         self.read_token();
-                        ParserNode::VarInit { left: Box::from(id), right: Box::from(exp) }
+                        ParserNode::Declare { ident: Box::from(id), exp: Some(Box::from(exp)) }
                     },
                     Token::OpenParenthesis => {
                         self.read_token();
@@ -77,15 +77,15 @@ impl Parser {
                     },
                     Token::Semicolon => {
                         self.read_token();
-                        ParserNode::VarDecl {ident: Box::from(id)}
-                    }
+                        ParserNode::Declare { ident: Box::from(id), exp: None }
+                    },
                     _ => self.err("STMT: IntType ? => invalid syntax"),
                 }
                 
             },
             Token::Return => {
                 self.read_token();
-                let exp = self.parse_exp();
+                let exp = self.parse_logical_or();
                 
                 if self.next_token != Token::Semicolon {
                     return self.err("STMT: return => missing ;");
@@ -94,27 +94,34 @@ impl Parser {
                 ParserNode::Return { exp: Box::from(exp) }
             },
             Token::Ident(_) => {
-                let id = self.parse_factor();
-                if self.next_token != Token::Assign {
-                    return self.err("STMT: assign => missing =");
-                }
-                self.read_token();
-                let exp = self.parse_exp();
-                if self.next_token != Token::Semicolon {
-                    return self.err("STMT: assign => missing ;");
-                }
-                self.read_token();
-                ParserNode::Assign { left: Box::from(id), right: Box::from(exp)}
+                self.parse_assign()
+            },
+            Token::Int(_) => {
+                self.parse_assign()
             },
 
             _ => self.err("STMT: ? => invalid syntax"),
         }
     }
+    fn parse_assign(&mut self) -> ParserNode {
+        let mut a = self.parse_logical_or();
+        match self.next_token {
+            Token::Assign => {
+                self.read_token();
+                let b = self.parse_logical_or();
+                a = ParserNode::Assign { 
+                    left: Box::from(a), right: Box::from(b), 
+                };
+            },
+            _ => return a,
+        }
+        a    
+    }
     fn parse_logical_or(&mut self) -> ParserNode {
         let mut a = self.parse_logical_and();
         loop {
             match self.next_token {
-                Token::LogicaOr => {
+                Token::LogicalOr => {
                     self.read_token();
                     let b = self.parse_logical_and();
                     a = ParserNode::LogicalOr { 
@@ -343,7 +350,6 @@ impl Parser {
             _ => self.parse_factor(),
         }
     }
-
     fn parse_factor(&mut self) -> ParserNode {
         match self.next_token {
             Token::Ident(ref id) => {
@@ -372,7 +378,7 @@ impl Parser {
         if self.next_token != Token::EoF {
             self.next_token = self.lexer.next_token().expect("Erro (rt)");
         } 
-        //print!(" {:?}", self.next_token);
+        print!(" {:?}", self.next_token);
     }
 
     fn err(&self, msg: &str) -> ParserNode {

@@ -14,7 +14,7 @@ pub enum Token {
     
     // condition 
     LogicalAnd,
-    LogicaOr,
+    LogicalOr,
 
     BitwiseAnd,
     BitwiseOr,

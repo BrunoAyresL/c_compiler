@@ -1,10 +1,14 @@
+use std::{sync::atomic::{AtomicUsize, Ordering}};
+
+static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 pub enum ParserNode {
     // block
     Block(Vec<ParserNode>),
     
     // statement (declaration)
     FuncDecl {ident: Box<ParserNode>, block: Box<ParserNode>},
-    VarDecl {ident: Box<ParserNode>},
+    Declare {ident: Box<ParserNode>, exp: Option<Box<ParserNode>>},
     VarInit {left: Box<ParserNode>, right: Box<ParserNode>},
 
     // statement
@@ -72,7 +76,10 @@ impl ParserNode {
         let s = match self {
 
             ParserNode::FuncDecl { ident, block } => {
-                format!(".globl {0}\n{0}:\n{1}\n", ident.gen_assembly(), block.gen_assembly())
+                format!(
+                ".globl {0}
+        {0}:
+                {1}\n", ident.gen_assembly(), block.gen_assembly())
             },
             ParserNode::Block(statements) => {
                 let mut a = String::new();
@@ -87,6 +94,64 @@ impl ParserNode {
                 ret", exp.gen_assembly())
             },
 
+            // logical 
+            ParserNode::LogicalOr { left, right } => {
+                let first_label = self.new_label();
+                let end_label = self.new_label();
+                format!(
+                "{0}
+                cmp $0, %rax
+                je {first_label}
+                mov $1, %rax
+                jmp {end_label}
+            {first_label}:
+                {1}
+                cmp $0, %rax
+                mov $0, %rax
+                setne %al
+            {end_label}:", left.gen_assembly(), right.gen_assembly())
+            }
+            ParserNode::LogicalAnd { left, right } => {
+                let first_label = self.new_label();
+                let end_label = self.new_label();
+                format!(
+                "{0}
+                cmp $0, %rax
+                jne {first_label}
+                jmp {end_label}
+            {first_label}:
+                {1}
+                cmp $0, %rax
+                mov $0, %rax
+                setne %al
+            {end_label}:", left.gen_assembly(), right.gen_assembly())
+            }
+
+            // bitwise
+            ParserNode::BitwiseOr { left, right } => {
+                format!(
+                "{0}
+                push %rax
+                {1}
+                pop %rcx
+                or %rcx, %rax", left.gen_assembly(), right.gen_assembly())
+            }
+            ParserNode::BitwiseXor { left, right } => {
+                format!(
+                "{0}
+                push %rax
+                {1}
+                pop %rcx
+                xor %rcx, %rax", left.gen_assembly(), right.gen_assembly())
+            }
+            ParserNode::BitwiseAnd { left, right } => {
+                format!(
+                "{0}
+                push %rax
+                {1}
+                pop %rcx
+                and %rcx, %rax", left.gen_assembly(), right.gen_assembly())
+            }
 
             // equality
             ParserNode::Equal { left, right } => {
@@ -110,9 +175,47 @@ impl ParserNode {
                 setne %al", left.gen_assembly(), right.gen_assembly())
             }
 
-
             // relational
-
+            ParserNode::Greater { left, right } => {
+                format!(
+                "{0}
+                push %rax
+                {1}
+                pop %rcx
+                cmp %rax, %rcx
+                mov $0, %rax
+                setg %al", left.gen_assembly(), right.gen_assembly())
+            }
+            ParserNode::GreaterEqual { left, right } => {
+                format!(
+                "{0}
+                push %rax
+                {1}
+                pop %rcx
+                cmp %rax, %rcx
+                mov $0, %rax
+                setge %al", left.gen_assembly(), right.gen_assembly())
+            }
+            ParserNode::Less { left, right } => {
+                format!(
+                "{0}
+                push %rax
+                {1}
+                pop %rcx
+                cmp %rax, %rcx
+                mov $0, %rax
+                setl %al", left.gen_assembly(), right.gen_assembly())
+            }
+            ParserNode::LessEqual { left, right } => {
+                format!(
+                "{0}
+                push %rax
+                {1}
+                pop %rcx
+                cmp %rax, %rcx
+                mov $0, %rax
+                setle %al", left.gen_assembly(), right.gen_assembly())
+            }
 
             // expression
             ParserNode::ShiftLeft { left, right } => {
@@ -214,6 +317,10 @@ impl ParserNode {
         s
     }
 
+    fn new_label(&self) -> String {
+        COUNTER.fetch_add(1, Ordering::Relaxed);
+        format!("_pos{}", COUNTER.load(Ordering::Relaxed))
+    }
 
     pub fn to_string(&self) -> String {
         match self {
@@ -230,8 +337,16 @@ impl ParserNode {
             ParserNode::FuncDecl { ident, block } => {
                 format!("int {}() {{\n{}\n}}",ident.to_string(), block.to_string())
             }
-            ParserNode::VarDecl{ ident} => {
-                format!("   int {};\n",ident.to_string())
+            ParserNode::Declare{ ident, exp } => {
+                match exp {
+                    None => {
+                        format!("   int {};\n",ident.to_string())
+                    },
+                    Some(exp) => {
+                        format!("   int {} = {};\n",ident.to_string(), exp.to_string())
+                    }
+                }
+                
             }
             ParserNode::VarInit{ left, right } => {
                 format!("   int {} = {};\n",left.to_string(), right.to_string())
@@ -341,7 +456,7 @@ impl ParserNode {
 
             // other (debug)
             ParserNode::Invalid(s) => {
-                format!("\n----------> {}\n", s.to_string())
+                format!("\n---------- {} ----------\n", s.to_string())
             }
         }
     }
