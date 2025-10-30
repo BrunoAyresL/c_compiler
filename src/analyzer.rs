@@ -7,14 +7,13 @@ pub struct SemanticAnalyzer {
 }
 
 struct Symbol {
-    name: String,
     scope: usize,
     kind: SymbolKind,
 }
 
 enum SymbolKind {
     Variable { initialized: bool },
-    Function { params: Vec<Symbol> },
+    Function { args_size: usize },
 }
 #[derive(Debug)]
 pub enum AnalyzerError {
@@ -22,6 +21,8 @@ pub enum AnalyzerError {
     InvalidNode(String),
     ScopeError(String),
     AlreadyDeclared(String),
+    InvalidArguments(String),
+    TypeMismatch(String),
 }
 
 pub fn new_analyzer() -> SemanticAnalyzer {
@@ -49,12 +50,17 @@ impl SemanticAnalyzer {
                 self.scope_count -= 1;
                 self.symbol_table.pop();
             },
-            ParserNode::FuncDecl { ident, block } => {
-                if self.scope_count != 0 {
+            ParserNode::FuncDecl { ident, args, block } => {
+                if self.scope_count != 1 {
                     return Err(AnalyzerError::InvalidNode("function declaration inside block".to_string()))
                 }
                 let name = self.get_ident(*ident)?;
-                self.declare_function(&name)?;
+                let args_size = args.len();
+                for arg in args {
+                    self.analyze_node(arg)?;
+                    
+                }
+                self.declare_function(&name, args_size)?;
 
                 self.analyze_node(*block)?
 
@@ -108,6 +114,23 @@ impl SemanticAnalyzer {
                 self.analyze_node(*val)?;
             },
 
+            ParserNode::FuncCall { ident, args } => {
+                match self.get_symbol(&ident) {
+                    Some(s) => {
+                        match s.kind {
+                            SymbolKind::Function { args_size } => {
+                                if args.len() != args_size {
+                                    return Err(AnalyzerError::InvalidArguments("argument count invalid".into()));
+                                }
+                            }
+                            _ => return Err(AnalyzerError::TypeMismatch(ident)),
+
+                        }
+                    }
+                    None => return Err(AnalyzerError::UndeclaredVar(ident)),
+                }
+            }
+
             ParserNode::Const(_) => {
 
             },
@@ -129,8 +152,7 @@ impl SemanticAnalyzer {
         let scope = self.scope_count;
         self.current_table()?.insert(
             name.clone(), 
-            Symbol {
-                name: name.to_string(), 
+            Symbol { 
                 kind: SymbolKind::Variable { initialized: initialized }, 
                 scope: scope
             },
@@ -152,7 +174,7 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn declare_function(&mut self, name: &String) -> Result<(), AnalyzerError> {
+    fn declare_function(&mut self, name: &String, args_size: usize) -> Result<(), AnalyzerError> {
         if self.is_declared(name)? {
             return Err(AnalyzerError::AlreadyDeclared("function already exists".into()));
         }
@@ -161,8 +183,7 @@ impl SemanticAnalyzer {
         self.current_table()?.insert(
             name.clone(), 
             Symbol {
-                name: name.to_string(), 
-                kind: SymbolKind::Function { params: Vec::new() }, 
+                kind: SymbolKind::Function { args_size: args_size }, 
                 scope: scope},
             );
         Ok(())
@@ -176,13 +197,21 @@ impl SemanticAnalyzer {
     }
 
     fn is_declared(&mut self, var: &String) -> Result<bool, AnalyzerError> {
-
         for (_, table) in self.symbol_table.iter().enumerate() {
             if table.contains_key(var) {
                 return Ok(true)
             }
         }
         Ok(false)
+    }
+    fn get_symbol(&mut self, var: &String) -> Option<&Symbol> {
+        for (_, table) in self.symbol_table.iter().enumerate() {
+            match table.get(var) {
+                Some(s) => return Some(s),
+                None => (),
+            }
+        }
+        None
     }
 
     fn is_initialized(&mut self, var: &String) -> Result<bool, AnalyzerError> {
@@ -208,7 +237,7 @@ impl SemanticAnalyzer {
 
     pub fn print(&self) {
         print!("Symbol Table:");
-        for (i, t) in self.symbol_table.iter().enumerate() {
+        for (_, t) in self.symbol_table.iter().enumerate() {
             print!("(");
             for s in t.keys() {
                 print!(" {}", s);

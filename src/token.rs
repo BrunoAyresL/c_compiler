@@ -50,7 +50,7 @@ pub enum Token {
     CloseBracket,
     OpenParenthesis,
     CloseParenthesis,
-    
+    Comma,
     
     EoF,
     Invalid

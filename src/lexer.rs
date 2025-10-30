@@ -63,6 +63,7 @@ impl Lexer {
             b'(' => Token::OpenParenthesis,
             b')' => Token::CloseParenthesis,
             b';' => Token::Semicolon,
+            b',' => Token::Comma,
             b'~' => Token::Tilde,
             b'+' => Token::Plus,
             b'-' => Token::Minus,

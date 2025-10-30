@@ -18,17 +18,19 @@ pub fn new_parser(input: &str) -> Parser {
 impl Parser {
      
     pub fn parse(&mut self) -> ParserNode {
-        self.parse_stmt()
+        self.parse_block()
     }
     fn parse_block(&mut self) -> ParserNode {
         let mut statements: Vec<ParserNode> = Vec::new(); 
         while self.next_token != Token::CloseBracket && self.next_token != Token::EoF {
             statements.push(self.parse_stmt());
+            
         }
         self.read_token();
         ParserNode::Block(statements)
     } 
     fn parse_stmt(&mut self) -> ParserNode {
+        print!("FUNC CALL - \n{:?}\n", self.next_token);
         match self.next_token {
             Token::If => {
                 self.read_token();
@@ -61,19 +63,17 @@ impl Parser {
                         self.read_token();
                         ParserNode::Declare { ident: Box::from(id), exp: Some(Box::from(exp)) }
                     },
-                    Token::OpenParenthesis => {
-                        self.read_token();
-                        if self.next_token != Token::CloseParenthesis {
-                            return self.err("STMT: function declaration => missing )");
-                        }
-                        self.read_token();
-                        if self.next_token != Token::OpenBracket {
-                            return self.err("STMT: function declaration => missing {");
-                        }
+                    Token::OpenBracket => {
                         self.read_token();
                         let block = self.parse_block();
-
-                        ParserNode::FuncDecl { ident: Box::from(id), block: Box::from(block) }
+                        match id {
+                            ParserNode::FuncCall { ident, args } => {
+                                ParserNode::FuncDecl { ident: Box::from(ParserNode::Var(ident)), 
+                                    args: args, block: Box::from(block) }
+                            },
+                            _ => return self.err("STMT: func declaration => invalid"),
+                        }
+                        
                     },
                     Token::Semicolon => {
                         self.read_token();
@@ -355,11 +355,27 @@ impl Parser {
         }
     }
     fn parse_factor(&mut self) -> ParserNode {
-        match self.next_token {
+        let token = self.next_token.clone();
+        match token {
             Token::Ident(ref id) => {
-                let node = ParserNode::Var(id.clone());
                 self.read_token();
-                node
+                if self.next_token != Token::OpenParenthesis {
+                    ParserNode::Var(id.clone())
+                } else {
+                    self.read_token();
+                    let mut args = Vec::new();
+                    loop {
+                        match self.next_token {
+                            Token::Comma => self.read_token(),
+                            Token::CloseParenthesis => break,
+                            _ => args.push(self.parse_logical_or()),   
+                        }
+                    }
+                    self.read_token();
+                    
+                    ParserNode::FuncCall { ident: id.clone(), args: args }
+                }
+                
             },
             Token::Int(num) => {
                 let node = ParserNode::Const(num);

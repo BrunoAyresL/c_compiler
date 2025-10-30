@@ -7,7 +7,7 @@ pub enum ParserNode {
     Block(Vec<ParserNode>),
     
     // statement (declaration)
-    FuncDecl {ident: Box<ParserNode>, block: Box<ParserNode>},
+    FuncDecl {ident: Box<ParserNode>, args: Vec<ParserNode>, block: Box<ParserNode>},
     Declare {ident: Box<ParserNode>, exp: Option<Box<ParserNode>>},
 
     // statement
@@ -59,6 +59,7 @@ pub enum ParserNode {
     Not {val: Box<ParserNode>},
 
     // factor
+    FuncCall{ident: String, args: Vec<ParserNode>},
     Var(String),
     Const(usize),
     SubExp {val: Box<ParserNode>},
@@ -74,7 +75,7 @@ impl ParserNode {
     pub fn gen_assembly(&self) -> String {
         let s = match self {
 
-            ParserNode::FuncDecl { ident, block } => {
+            ParserNode::FuncDecl { ident, args, block } => {
                 format!(
                 ".globl {0}
         {0}:
@@ -333,8 +334,16 @@ impl ParserNode {
             }
 
             // statement
-            ParserNode::FuncDecl { ident, block } => {
-                format!("int {}() {{\n{}\n}}",ident.to_string(), block.to_string())
+            ParserNode::FuncDecl { ident, args, block } => {
+                let mut s = format!("int {}(",ident.to_string());
+                for arg in args {
+                    s.push_str(&arg.to_string());
+                    s.push(',');
+                }
+                if args.len() != 0 { s.pop(); }
+                s.push_str(format!(") {{\n{}\n}}\n", block.to_string()).as_str());
+                s
+                
             }
             ParserNode::Declare{ ident, exp } => {
                 match exp {
@@ -440,6 +449,17 @@ impl ParserNode {
             }
 
             // factor
+            ParserNode::FuncCall { ident, args } => {
+                let mut s = String::from(ident.to_string());
+                s.push('(');
+                for arg in args {
+                    s.push_str(&arg.to_string());
+                    s.push(',');
+                }
+                if args.len() != 0 { s.pop(); }
+                s.push(')');
+                s
+            }
             ParserNode::Var(id) => {
                 id.to_string()
             }
