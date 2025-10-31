@@ -30,7 +30,8 @@ impl Parser {
         ParserNode::Block(statements)
     } 
     fn parse_stmt(&mut self) -> ParserNode {
-        print!("FUNC CALL - \n{:?}\n", self.next_token);
+        //println!("stmt start: {:?}", self.next_token);
+
         match self.next_token {
             Token::If => {
                 self.read_token();
@@ -52,34 +53,66 @@ impl Parser {
             },
             Token::IntType => {
                 self.read_token();
-                let id = self.parse_logical_or();
-                match self.next_token {
-                    Token::Assign => {
+                let tok = self.next_token.clone();
+                if let Token::Ident(name) = tok {
+                    let ident = name.clone();
+                    self.read_token();
+                    if self.next_token == Token::OpenParenthesis {
+                        self.read_token();
+                        // int func(int x, int y, int z) { }
+                        let mut args = Vec::new();
+                        while self.next_token != Token::CloseParenthesis {
+                            //println!("while 1: {:?}", self.next_token);
+                            //println!("while 2: {:?}", self.next_token);
+                            if let Token::IntType = self.next_token {
+                                //println!("while 3: {:?}", self.next_token);
+                                self.read_token();
+                                //println!("while 4: {:?}", self.next_token);
+                                if let Token::Ident(id) = &self.next_token {
+                                    //println!("while 5: {:?}", self.next_token);
+                                    args.push(ParserNode::Var(id.to_string()));
+                                    
+                                    self.read_token();
+                                    //println!("while 6: {:?}", self.next_token);
+                                } else {
+                                    return self.err("argument declaration needs ident");
+                                }
+                            } else if self.next_token == Token::Comma {
+                                self.read_token();
+                            }
+                            else {
+                                return self.err("argument declaration is not 'int'");
+                            }
+                        }
+                        //println!("while end: {:?}", self.next_token);
+                        self.read_token();
+                        if self.next_token != Token::OpenBracket {
+                            return self.err("func declaration missing '{'");
+                        }
+                        self.read_token();
+                        //println!("block start: {:?}", self.next_token);
+                        let block = self.parse_block();
+                        //println!("block end: {:?}", self.next_token);
+
+                        println!("arg size: {}", args.len());
+                        return ParserNode::FuncDecl { ident: Box::from(ParserNode::Var(ident)), args: args, block: Box::from(block) };
+                        
+                    } else if self.next_token == Token::Assign  {
                         self.read_token();
                         let exp = self.parse_logical_or();
                         if self.next_token != Token::Semicolon {
                             return self.err("STMT: var declaration => missing ;");
                         }
                         self.read_token();
-                        ParserNode::Declare { ident: Box::from(id), exp: Some(Box::from(exp)) }
-                    },
-                    Token::OpenBracket => {
+                        return ParserNode::Declare { ident: Box::from(ParserNode::Var(name.clone())), exp: Some(Box::from(exp)) };
+                    } else if self.next_token == Token::Semicolon {
                         self.read_token();
-                        let block = self.parse_block();
-                        match id {
-                            ParserNode::FuncCall { ident, args } => {
-                                ParserNode::FuncDecl { ident: Box::from(ParserNode::Var(ident)), 
-                                    args: args, block: Box::from(block) }
-                            },
-                            _ => return self.err("STMT: func declaration => invalid"),
-                        }
-                        
-                    },
-                    Token::Semicolon => {
-                        self.read_token();
-                        ParserNode::Declare { ident: Box::from(id), exp: None }
-                    },
-                    _ => self.err("STMT: IntType ? => invalid syntax"),
+                        return ParserNode::Declare { ident: Box::from(ParserNode::Var(name.clone())), exp: None };
+                    } else {
+                        return self.err("??")
+                    }
+                } else {
+                    return self.err("?");
                 }
                 
             },
@@ -93,6 +126,8 @@ impl Parser {
                 self.read_token();
                 ParserNode::Return { exp: Box::from(exp) }
             },
+
+
             Token::Ident(_) => {
                 self.parse_assign()
             },
@@ -102,6 +137,20 @@ impl Parser {
 
             _ => self.err("STMT: ? => invalid syntax"),
         }
+    }
+
+    fn parse_expression(&mut self) -> ParserNode {
+        let mut exps = vec![self.parse_assign()];
+        loop {
+            match self.next_token {
+                Token::Comma => {
+                    self.read_token();
+                    exps.push(self.parse_assign());
+                },
+                _ => break,
+            }
+        }
+        ParserNode::Expression(exps) 
     }
     fn parse_assign(&mut self) -> ParserNode {
         let mut a = self.parse_logical_or();
@@ -223,32 +272,32 @@ impl Parser {
         a    
     }
     fn parse_relational(&mut self) -> ParserNode {
-        let mut a = self.parse_exp();
+        let mut a = self.parse_shift();
         match self.next_token {
             Token::Greater => {
                 self.read_token();
-                let b = self.parse_exp();
+                let b = self.parse_shift();
                 a = ParserNode::Greater { 
                     left: Box::from(a), right: Box::from(b), 
                 };
             },
             Token::GreaterEqual => {
                 self.read_token();
-                let b = self.parse_exp();
+                let b = self.parse_shift();
                 a = ParserNode::GreaterEqual { 
                     left: Box::from(a), right: Box::from(b), 
                 };
             },
             Token::Less => {
                 self.read_token();
-                let b = self.parse_exp();
+                let b = self.parse_shift();
                 a = ParserNode::Less { 
                     left: Box::from(a), right: Box::from(b), 
                 };
             },
             Token::LessEqual => {
                 self.read_token();
-                let b = self.parse_exp();
+                let b = self.parse_shift();
                 a = ParserNode::LessEqual { 
                     left: Box::from(a), right: Box::from(b), 
                 };
@@ -257,7 +306,7 @@ impl Parser {
         }
         a    
     }    
-    fn parse_exp(&mut self) -> ParserNode {
+    fn parse_shift(&mut self) -> ParserNode {
         let mut a = self.parse_additive();
         loop {
             match self.next_token {
@@ -368,7 +417,7 @@ impl Parser {
                         match self.next_token {
                             Token::Comma => self.read_token(),
                             Token::CloseParenthesis => break,
-                            _ => args.push(self.parse_logical_or()),   
+                            _ => args.push(self.parse_assign()),   
                         }
                     }
                     self.read_token();
@@ -384,7 +433,7 @@ impl Parser {
             },
             Token::OpenParenthesis => {
                 self.read_token();
-                let exp = self.parse_exp();
+                let exp = self.parse_logical_or();
                 if self.next_token != Token::CloseParenthesis {
                    self.err("FACTOR: missing )");
                 }
@@ -398,7 +447,7 @@ impl Parser {
         if self.next_token != Token::EoF {
             self.next_token = self.lexer.next_token().expect("Erro (rt)");
         } 
-        //print!(" {:?}", self.next_token);
+        //println!(">> {:?}", self.next_token);
     }
 
     fn err(&self, msg: &str) -> ParserNode {

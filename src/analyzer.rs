@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, env::args};
 use crate::node::ParserNode;
 
 pub struct SemanticAnalyzer {
@@ -35,6 +35,7 @@ pub fn new_analyzer() -> SemanticAnalyzer {
 impl SemanticAnalyzer {
     pub fn analyze(&mut self, program_node: ParserNode) -> Result<(), AnalyzerError>{
         self.analyze_node(program_node)
+        
     }
 
     fn analyze_node(&mut self, node: ParserNode) -> Result<(), AnalyzerError> {
@@ -115,6 +116,7 @@ impl SemanticAnalyzer {
             },
 
             ParserNode::FuncCall { ident, args } => {
+
                 match self.get_symbol(&ident) {
                     Some(s) => {
                         match s.kind {
@@ -135,7 +137,9 @@ impl SemanticAnalyzer {
 
             },
             ParserNode::Var(var) => {
-                self.is_initialized(&var)?;
+                if self.scope_count > 1 {
+                    self.is_initialized(&var)?;
+                }
             },
             
 

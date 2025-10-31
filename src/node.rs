@@ -15,6 +15,9 @@ pub enum ParserNode {
     If {cond: Box<ParserNode>, block: Box<ParserNode>},
     Return {exp: Box<ParserNode>},
 
+    // expreession
+    Expression (Vec<ParserNode>),
+
     // logical OR (condition)
     LogicalOr {left: Box<ParserNode>, right: Box<ParserNode>},
 
@@ -337,10 +340,11 @@ impl ParserNode {
             ParserNode::FuncDecl { ident, args, block } => {
                 let mut s = format!("int {}(",ident.to_string());
                 for arg in args {
+                    s.push_str("int ");
                     s.push_str(&arg.to_string());
-                    s.push(',');
+                    s.push_str(", ");
                 }
-                if args.len() != 0 { s.pop(); }
+                if args.len() != 0 { s.pop(); s.pop();}
                 s.push_str(format!(") {{\n{}\n}}\n", block.to_string()).as_str());
                 s
                 
@@ -367,6 +371,11 @@ impl ParserNode {
             
             ParserNode::Return { exp } => {
                 format!("   return {};\n", exp.to_string())
+            }
+
+            // expression 
+            ParserNode::Expression(exps) => {
+                exps.into_iter().map(|exp| exp.to_string()).collect()
             }
 
             // logical
