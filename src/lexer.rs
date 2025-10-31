@@ -141,11 +141,66 @@ impl Lexer {
             // const
             b'0'..=b'9' => return Ok(Token::Int(self.read_int())),
             0 => Token::EoF,
-            _ => Token::Invalid
+            _ => Token::Invalid,
         };
 
         self.read_char();
         return Ok(tok)
+    }
+
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    fn collect_tokens(input: &str) -> Vec<Token> {
+        let mut lex = new_lexer(input);
+        let mut tokens = Vec::new();
+        loop {
+            let t = lex.next_token().unwrap();
+            tokens.push(t.clone());
+            if t == Token::EoF { break; }
+        }
+        tokens
+    }
+
+    #[test]
+    fn lexer_declare() {
+        let cases = [
+            ("int x;", vec![Token::IntType, Token::Ident("x".into()), Token::Semicolon, Token::EoF]),
+            ("int y = 2;", vec![Token::IntType, Token::Ident("y".into()), Token::Assign, Token::Int(2), Token::Semicolon, Token::EoF]),
+            ("int z = 2*3;", vec![Token::IntType, Token::Ident("z".into()), Token::Assign, Token::Int(2), Token::Asterisk, Token::Int(3), Token::Semicolon, Token::EoF]),
+        ];
+        
+        for (input, expected) in cases {
+            let got = collect_tokens(input);
+            assert_eq!(got, expected, "failed at: {}", input);
+        }
+    }
+    #[test]
+    fn lexer_function() {
+        let cases = [
+            ("int x() {}", vec![Token::IntType, Token::Ident("x".into()), Token::OpenParenthesis,  Token::CloseParenthesis, Token::OpenBracket, Token::CloseBracket, Token::EoF]),
+            ("y(a, b)", vec![Token::Ident("y".into()), Token::OpenParenthesis, Token::Ident("a".into()), Token::Comma, Token::Ident("b".into()), Token::CloseParenthesis, Token::EoF]),
+            ("int z(int a) {}", vec![Token::IntType, Token::Ident("z".into()), Token::OpenParenthesis, Token::IntType, Token::Ident("a".into()), Token::CloseParenthesis, Token::OpenBracket, Token::CloseBracket, Token::EoF]),
+        ];
+        
+        for (input, expected) in cases {
+            let got = collect_tokens(input);
+            assert_eq!(got, expected, "failed at: {}", input);
+        }
+    }
+    #[test]
+    fn lexer_expression() {
+        let cases = [
+            ("(a + b) * c", vec![Token::OpenParenthesis, Token::Ident("a".into()), Token::Plus, Token::Ident("b".into()), Token::CloseParenthesis, Token::Asterisk, Token::Ident("c".into()), Token::EoF])
+        ];
+        for (input, expected) in cases {
+            let got = collect_tokens(input);
+            assert_eq!(got, expected, "failed at: {}", input);
+        }
     }
 
 }

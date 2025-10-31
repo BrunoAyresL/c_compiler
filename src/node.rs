@@ -345,32 +345,32 @@ impl ParserNode {
                     s.push_str(", ");
                 }
                 if args.len() != 0 { s.pop(); s.pop();}
-                s.push_str(format!(") {{\n{}\n}}\n", block.to_string()).as_str());
+                s.push_str(format!(") {{{}}}", block.to_string()).as_str());
                 s
                 
             }
             ParserNode::Declare{ ident, exp } => {
                 match exp {
                     None => {
-                        format!("   int {};\n",ident.to_string())
+                        format!("int {};\n",ident.to_string())
                     },
                     Some(exp) => {
-                        format!("   int {} = {};\n",ident.to_string(), exp.to_string())
+                        format!("int {} = {};\n",ident.to_string(), exp.to_string())
                     }
                 }
                 
             }
 
             ParserNode::Assign { left, right } => {
-                format!("   {} = {};\n",left.to_string(), right.to_string())
+                format!("{} = {};\n",left.to_string(), right.to_string())
             }
 
             ParserNode::If { cond, block } => {
-                format!("   if ({}) {{\n    {}}}\n", cond.to_string(), block.to_string())
+                format!("if ({}) {{\n    {}}}\n", cond.to_string(), block.to_string())
             }
             
             ParserNode::Return { exp } => {
-                format!("   return {};\n", exp.to_string())
+                format!("return {};\n", exp.to_string())
             }
 
             // expression 

@@ -16,7 +16,7 @@ fn main() {
 
     let mut parser = new_parser(input.as_str());
     println!("\nparsing...");
-    let program_node = parser.parse();
+    let program_node = &parser.parse();
     println!("\nresult:\n");
     println!("{}", program_node.to_string());
 
@@ -32,7 +32,7 @@ fn main() {
         
     }
     
-    /*
+    
     println!("assembly:\n{}", program_node.gen_assembly());
     fs::write("output.s", program_node.gen_assembly()).expect("can't create file");
     Command::new("gcc")
@@ -41,6 +41,6 @@ fn main() {
         .arg("out")
         .spawn()
         .expect("Failed");
-    */
+    
 }
 

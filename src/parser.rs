@@ -94,7 +94,6 @@ impl Parser {
                         let block = self.parse_block();
                         //println!("block end: {:?}", self.next_token);
 
-                        println!("arg size: {}", args.len());
                         return ParserNode::FuncDecl { ident: Box::from(ParserNode::Var(ident)), args: args, block: Box::from(block) };
                         
                     } else if self.next_token == Token::Assign  {
@@ -127,15 +126,7 @@ impl Parser {
                 ParserNode::Return { exp: Box::from(exp) }
             },
 
-
-            Token::Ident(_) => {
-                self.parse_assign()
-            },
-            Token::Int(_) => {
-                self.parse_assign()
-            },
-
-            _ => self.err("STMT: ? => invalid syntax"),
+            _ => self.parse_assign(),
         }
     }
 
@@ -432,6 +423,7 @@ impl Parser {
                 node
             },
             Token::OpenParenthesis => {
+                print!("stuck");
                 self.read_token();
                 let exp = self.parse_logical_or();
                 if self.next_token != Token::CloseParenthesis {
@@ -446,12 +438,72 @@ impl Parser {
     pub fn read_token(&mut self) {
         if self.next_token != Token::EoF {
             self.next_token = self.lexer.next_token().expect("Erro (rt)");
-        } 
-        //println!(">> {:?}", self.next_token);
+        }
     }
 
     fn err(&self, msg: &str) -> ParserNode {
         ParserNode::Invalid(format!("{} at {:?}", msg, self.next_token))
     }
 
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    fn collect_nodes(input: &str) -> ParserNode {
+        let mut parser = new_parser(input);
+        parser.parse()
+    }
+
+    #[test]
+    fn parser_declare() {
+        let cases = [
+            ("int x;", "int x;\n"),
+            ("int y = 2;", "int y = 2;\n"),
+            ("int z = 2*3;", "int z = (2 * 3);\n"),
+        ];
+        
+        for (input, expected) in cases {
+            let got = collect_nodes(input);
+            let output = got.to_string();
+            assert_eq!(expected, output, "failed at: {}", input);
+        }
+    }
+    #[test]
+    fn parser_function() { 
+        let cases = [
+            ("int x() {}", "int x() {}"),
+            ("y(a, b)", "y(a,b)"),
+            ("int z(int a) {}","int z(int a) {}"),
+        ];
+        
+        for (input, expected) in cases {
+            let got = collect_nodes(input);
+            let output = got.to_string();
+            assert_eq!(expected, output, "failed at: {}", input);
+        }
+    }
+    #[test]
+    fn parser_expression() { 
+        let cases = [
+            ("5 + 3 == 2+1>>3*4", "((5 + 3) == ((2 + 1) >> (3 * 4)))"),
+            ("a + b * c - d / e & f | g ^ h << 2 >> 1 && i || j", "((((((a + (b * c)) - (d / e)) & f) | (g ^ ((h << 2) >> 1))) && i) || j)"),
+            ("a + b * c", "(a + (b * c))"),
+            ("a - b / c % d", "(a - ((b / c) % d))"),
+            ("a & b | c ^ d << e", "((a & b) | (c ^ (d << e)))"),
+            ("(a + b) * c", "(((a + b)) * c)"),
+            ("!(a + b * ~c)", "!((a + (b * ~c)))"),
+            ("!a + b * ~c", "(!a + (b * ~c))"),
+        ];
+        
+        for (input, expected) in cases {
+            let got = collect_nodes(input);
+            let output = got.to_string();
+            assert_eq!(expected, output, "failed at: {}", input);
+            
+        }
+    }
 }

@@ -1,10 +1,16 @@
+.globl func
+        func:
+                movl $2, %eax
+                ret
 .globl main
         main:
-                movl $6, %eax
+                z
                 push %rax
-                movl $10, %eax
-                cqto
+                x
+                push %rax
+                y
                 pop %rcx
-                idivq %rcx
-                mov %rdx, %rax
+                imul %rcx, %rax
+                pop %rcx
+                sub %rcx, %rax
                 ret

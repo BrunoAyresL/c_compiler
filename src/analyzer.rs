@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env::args};
+use std::{collections::HashMap};
 use crate::node::ParserNode;
 
 pub struct SemanticAnalyzer {
@@ -6,7 +6,7 @@ pub struct SemanticAnalyzer {
     scope_count: usize,
 }
 
-struct Symbol {
+pub struct Symbol {
     scope: usize,
     kind: SymbolKind,
 }
@@ -33,12 +33,12 @@ pub fn new_analyzer() -> SemanticAnalyzer {
 }
 
 impl SemanticAnalyzer {
-    pub fn analyze(&mut self, program_node: ParserNode) -> Result<(), AnalyzerError>{
+    pub fn analyze(&mut self, program_node: &ParserNode) -> Result<(), AnalyzerError>{
         self.analyze_node(program_node)
         
     }
 
-    fn analyze_node(&mut self, node: ParserNode) -> Result<(), AnalyzerError> {
+    fn analyze_node(&mut self, node: &ParserNode) -> Result<(), AnalyzerError> {
         match node {
             ParserNode::Block(nodes ) => {
                 self.scope_count += 1;
@@ -55,7 +55,7 @@ impl SemanticAnalyzer {
                 if self.scope_count != 1 {
                     return Err(AnalyzerError::InvalidNode("function declaration inside block".to_string()))
                 }
-                let name = self.get_ident(*ident)?;
+                let name = self.get_ident(ident)?;
                 let args_size = args.len();
                 for arg in args {
                     self.analyze_node(arg)?;
@@ -63,15 +63,15 @@ impl SemanticAnalyzer {
                 }
                 self.declare_function(&name, args_size)?;
 
-                self.analyze_node(*block)?
+                self.analyze_node(block)?
 
             },
             ParserNode::Declare { ident, exp } => {
-                let name = self.get_ident(*ident)?;
+                let name = self.get_ident(ident)?;
 
                 match exp {
                     Some(n) => {
-                        self.analyze_node(*n)?;
+                        self.analyze_node(n)?;
                         self.declare_variable(&name, true)?;
                     },
                     None => self.declare_variable(&name, false)?,
@@ -79,23 +79,23 @@ impl SemanticAnalyzer {
                 
             },
             ParserNode::Assign { left, right } => {
-                let name = self.get_ident(*left)?;
+                let name = self.get_ident(left)?;
 
                 if !self.is_declared(&name)? {
                     return Err(AnalyzerError::UndeclaredVar(name));
                 }
                 self.initialize_variable(&name)?;
 
-                self.analyze_node(*right)?;
+                self.analyze_node(right)?;
 
             },
             ParserNode::If { cond, block } => {
 
-                self.analyze_node(*cond)?;
-                self.analyze_node(*block)?;
+                self.analyze_node(cond)?;
+                self.analyze_node(block)?;
             },
             ParserNode::Return { exp } => {
-                self.analyze_node(*exp)?;
+                self.analyze_node(exp)?;
             },
 
             ParserNode::Add {left, right} | ParserNode::Sub {left, right} |
@@ -106,13 +106,13 @@ impl SemanticAnalyzer {
             ParserNode::LessEqual {left, right} | ParserNode::Equal {left, right} |
             ParserNode::NotEqual {left, right} | ParserNode::BitwiseAnd {left, right} |
             ParserNode::BitwiseXor {left, right} | ParserNode::BitwiseOr {left, right} => {
-                self.analyze_node(*left)?;
-                self.analyze_node(*right)?;
+                self.analyze_node(left)?;
+                self.analyze_node(right)?;
             },
 
             ParserNode::Neg { val } | ParserNode::Complement { val } |
             ParserNode::Not { val } | ParserNode::SubExp { val } => {
-                self.analyze_node(*val)?;
+                self.analyze_node(val)?;
             },
 
             ParserNode::FuncCall { ident, args } => {
@@ -125,11 +125,11 @@ impl SemanticAnalyzer {
                                     return Err(AnalyzerError::InvalidArguments("argument count invalid".into()));
                                 }
                             }
-                            _ => return Err(AnalyzerError::TypeMismatch(ident)),
+                            _ => return Err(AnalyzerError::TypeMismatch(ident.clone())),
 
                         }
                     }
-                    None => return Err(AnalyzerError::UndeclaredVar(ident)),
+                    None => return Err(AnalyzerError::UndeclaredVar(ident.clone())),
                 }
             }
 
@@ -232,9 +232,9 @@ impl SemanticAnalyzer {
         Err(AnalyzerError::UndeclaredVar(var.clone()))
     }
 
-    pub fn get_ident(&self, ident: ParserNode) -> Result<String, AnalyzerError> {
+    pub fn get_ident(&self, ident: &ParserNode) -> Result<String, AnalyzerError> {
         match ident {
-            ParserNode::Var(id) => Ok(id),
+            ParserNode::Var(id) => Ok(id.clone()),
             _ => return Err(AnalyzerError::InvalidNode("left expression must be a variable".into()))
         }   
     }
@@ -250,4 +250,40 @@ impl SemanticAnalyzer {
         }
     }
 
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::{parser::{new_parser}};
+
+    use super::*;
+
+    #[test]
+    fn analyzer_declare() {
+        let cases = [
+            "int x;", 
+            "int y = 2;",
+            "int main() { return 1 > 2; int x = 0; x=2; if(x*x ==2) {int y = 0; y = y + 2;} return x;}",
+        ];
+        
+        for input in cases {
+            let mut analyzer = new_analyzer();
+
+            let mut parser = new_parser(input);
+            let program_node = &parser.parse();
+
+            let got = analyzer.analyze(program_node);
+            assert!(matches!(got, Ok(_)));
+        }
+    }
+
+    #[test]
+    fn parser_function() { 
+
+    }
+    #[test]
+    fn parser_expression() { 
+
+    }
 }
