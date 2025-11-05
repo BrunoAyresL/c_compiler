@@ -1,14 +1,14 @@
 int func(int x, int y) {
-    return 2;
+    return x / y;
 }
 
 int main() {
     int x = 0;
     int y = 2 + x;
-    if (func(x,y)) {
-        return x > x;
-    }
-    int z = -1;
-    return x * y - z;
+    int z = func(x, y);
+    return x * y;
+    if (x > 2) {
+        return 2;
+    } 
 }
 

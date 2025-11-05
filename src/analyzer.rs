@@ -1,17 +1,21 @@
 use std::{collections::HashMap};
 use crate::node::ParserNode;
+use crate::symboltable::{SymbolTable, new_symbol_table};
 
 pub struct SemanticAnalyzer {
     symbol_table: Vec<HashMap<String, Symbol>>,
     scope_count: usize,
+    pub complete_table: Vec<SymbolTable>,
 }
 
+#[derive(Debug)]
 pub struct Symbol {
-    scope: usize,
-    kind: SymbolKind,
+   pub kind: SymbolKind,
+   pub offset: usize,
 }
 
-enum SymbolKind {
+#[derive(Debug)]
+pub enum SymbolKind {
     Variable { initialized: bool },
     Function { args_size: usize },
 }
@@ -23,46 +27,53 @@ pub enum AnalyzerError {
     AlreadyDeclared(String),
     InvalidArguments(String),
     TypeMismatch(String),
+    TableNotFound(String),
 }
 
 pub fn new_analyzer() -> SemanticAnalyzer {
     SemanticAnalyzer {
         symbol_table: vec!(HashMap::new()),
         scope_count: 0,
+        complete_table: Vec::new(),
     }
 }
 
 impl SemanticAnalyzer {
-    pub fn analyze(&mut self, program_node: &ParserNode) -> Result<(), AnalyzerError>{
-        self.analyze_node(program_node)
+    pub fn analyze(&mut self, program_node: &mut ParserNode) -> Result<(), AnalyzerError> {
+        // self.print();
+        self.analyze_node(program_node)?;
         
+        Ok(())
     }
 
-    fn analyze_node(&mut self, node: &ParserNode) -> Result<(), AnalyzerError> {
+    fn analyze_node(&mut self, node: &mut ParserNode) -> Result<(), AnalyzerError> {
         match node {
             ParserNode::Block(nodes ) => {
-                self.scope_count += 1;
-                self.symbol_table.push(HashMap::new());
-
+                
                 for n in nodes {
                     self.analyze_node(n)?;
                 }
 
-                self.scope_count -= 1;
-                self.symbol_table.pop();
+                let table = self.symbol_table.pop().unwrap();
+                self.complete_table.push(new_symbol_table(table, self.scope_count));
+                if self.scope_count != 0 { self.scope_count -= 1}
             },
             ParserNode::FuncDecl { ident, args, block } => {
-                if self.scope_count != 1 {
+                if self.scope_count != 0 {
                     return Err(AnalyzerError::InvalidNode("function declaration inside block".to_string()))
                 }
                 let name = self.get_ident(ident)?;
                 let args_size = args.len();
-                for arg in args {
-                    self.analyze_node(arg)?;
-                    
-                }
+
                 self.declare_function(&name, args_size)?;
 
+                self.new_scope();
+
+                for arg in args {
+                    self.declare_variable(&arg.to_string(), true)?;
+                }
+                
+                
                 self.analyze_node(block)?
 
             },
@@ -89,13 +100,24 @@ impl SemanticAnalyzer {
                 self.analyze_node(right)?;
 
             },
-            ParserNode::If { cond, block } => {
+            ParserNode::If { cond, block , else_stmt} => {
 
                 self.analyze_node(cond)?;
+                self.new_scope();
                 self.analyze_node(block)?;
+                match else_stmt {
+                    Some(n) => self.analyze_node(n)?,
+                    None => (),
+                }
             },
             ParserNode::Return { exp } => {
                 self.analyze_node(exp)?;
+            },
+
+            ParserNode::Expression(nodes) => {
+                for n in nodes {
+                    self.analyze_node(n)?;
+                }
             },
 
             ParserNode::Add {left, right} | ParserNode::Sub {left, right} |
@@ -105,7 +127,8 @@ impl SemanticAnalyzer {
             ParserNode::GreaterEqual {left, right} | ParserNode::Less {left, right} | 
             ParserNode::LessEqual {left, right} | ParserNode::Equal {left, right} |
             ParserNode::NotEqual {left, right} | ParserNode::BitwiseAnd {left, right} |
-            ParserNode::BitwiseXor {left, right} | ParserNode::BitwiseOr {left, right} => {
+            ParserNode::BitwiseXor {left, right} | ParserNode::BitwiseOr {left, right} |
+            ParserNode::LogicalAnd {left, right} | ParserNode::LogicalOr {left, right} => {
                 self.analyze_node(left)?;
                 self.analyze_node(right)?;
             },
@@ -129,7 +152,7 @@ impl SemanticAnalyzer {
 
                         }
                     }
-                    None => return Err(AnalyzerError::UndeclaredVar(ident.clone())),
+                    None => return Err(AnalyzerError::UndeclaredVar(format!("'{}' not found (func call)",ident.clone()))),
                 }
             }
 
@@ -137,7 +160,7 @@ impl SemanticAnalyzer {
 
             },
             ParserNode::Var(var) => {
-                if self.scope_count > 1 {
+                if self.scope_count > 0 {
                     self.is_initialized(&var)?;
                 }
             },
@@ -152,13 +175,12 @@ impl SemanticAnalyzer {
         if self.is_declared(name)? {
             return Err(AnalyzerError::AlreadyDeclared("variable already exists".into()));
         }
-
-        let scope = self.scope_count;
+        let localvar_count = self.get_localvar_count()?;
         self.current_table()?.insert(
             name.clone(), 
             Symbol { 
                 kind: SymbolKind::Variable { initialized: initialized }, 
-                scope: scope
+                offset: localvar_count * 8,
             },
         );
         Ok(())
@@ -183,12 +205,12 @@ impl SemanticAnalyzer {
             return Err(AnalyzerError::AlreadyDeclared("function already exists".into()));
         }
 
-        let scope = self.scope_count;
+        let localvar_count = self.get_localvar_count()?;
         self.current_table()?.insert(
             name.clone(), 
             Symbol {
-                kind: SymbolKind::Function { args_size: args_size }, 
-                scope: scope},
+                kind: SymbolKind::Function { args_size: args_size }, offset: localvar_count * 8 },
+                
             );
         Ok(())
     }
@@ -239,6 +261,15 @@ impl SemanticAnalyzer {
         }   
     }
 
+    pub fn get_localvar_count(&self) -> Result<usize, AnalyzerError> {
+        Ok(self.symbol_table.last().iter().len())
+    }
+
+    fn new_scope(&mut self) {
+        self.scope_count += 1;
+        self.symbol_table.push(HashMap::new());
+    }
+
     pub fn print(&self) {
         print!("Symbol Table:");
         for (_, t) in self.symbol_table.iter().enumerate() {
@@ -264,26 +295,41 @@ mod tests {
         let cases = [
             "int x;", 
             "int y = 2;",
-            "int main() { return 1 > 2; int x = 0; x=2; if(x*x ==2) {int y = 0; y = y + 2;} return x;}",
+            "int main() { return 1 > 2; int x = 0; x=2; if(x*x ==2) {int y = 0; y = y + 2;} else { x = x - 1; } return x;}",
+            "int func() { return 10; } int main() { return func(); }"
         ];
         
         for input in cases {
             let mut analyzer = new_analyzer();
+            let mut parser = new_parser(input).unwrap();
+            let mut program_node = parser.parse().unwrap();
 
-            let mut parser = new_parser(input);
-            let program_node = &parser.parse();
-
-            let got = analyzer.analyze(program_node);
+            let got = analyzer.analyze(&mut program_node);
             assert!(matches!(got, Ok(_)));
         }
     }
 
     #[test]
-    fn parser_function() { 
+    fn analyzer_expression() { 
+        let cases = [
+            "5 + 3 == 2+1>>3*4",
+            "a + b * c - d / e & f | g ^ h << 2 >> 1 && i || j",
+            "a + b * c",
+            "a - b / c % d",
+            "a & b | c ^ d << e",
+            "(a + b) * c",
+            "!(a + b * ~c)",
+            "!a + b * ~c",
+        ];
+        
+        for input in cases {
+            let mut analyzer = new_analyzer();
 
-    }
-    #[test]
-    fn parser_expression() { 
+            let mut parser = new_parser(input).unwrap();
+            let mut program_node = parser.parse().unwrap();
 
+            let got = analyzer.analyze(&mut program_node);
+            assert!(matches!(got, Ok(_)));
+        }
     }
 }

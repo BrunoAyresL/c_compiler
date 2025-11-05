@@ -1,16 +1,29 @@
 .globl func
-        func:
-                movl $2, %eax
+                func: 
+                pushq %rbp
+                movq %rsp, %rbp
+		%movl %edi, 16(%rbp)
+		%movl %esi, 24(%rbp)
+                mov -0(%rbp), %rax
+                push %rax
+                
+                mov -0(%rbp), %rax
+                cqto
+                pop %rcx
+                idivq %rcx
+                mov %rbp, %rsp
+                pop %rbp
                 ret
 .globl main
-        main:
-                z
+                main: 
+                pushq %rbp
+                movq %rsp, %rbp
+                mov -0(%rbp), %rax
                 push %rax
-                x
-                push %rax
-                y
+                
+                mov -0(%rbp), %rax
                 pop %rcx
                 imul %rcx, %rax
-                pop %rcx
-                sub %rcx, %rax
+                mov %rbp, %rsp
+                pop %rbp
                 ret

@@ -1,4 +1,4 @@
-use std::io::Error;
+use core::fmt;
 use crate::token::Token;
 
 pub struct Lexer {
@@ -7,6 +7,21 @@ pub struct Lexer {
     ch: u8,
 
 }
+#[derive(Debug)]
+pub enum LexerError {
+    InvalidChar(char, usize),
+    InvalidInt(usize),
+}
+
+impl fmt::Display for LexerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LexerError::InvalidChar(c, pos) => write!(f, "LexerError: invalid char '{}' found in position {}.", c, pos),
+            LexerError::InvalidInt(pos) => write!(f, "LexerError: invalid int found in position {}.", pos)
+        }
+    }
+}
+
 
 pub fn new_lexer(input: &str) -> Lexer {
     Lexer {
@@ -34,14 +49,18 @@ impl Lexer {
         }
     }
 
-    fn read_int(&mut self) -> usize {
+    fn read_int(&mut self) -> Result<usize, LexerError> {
         let start = self.curr;
         while self.ch.is_ascii_digit() {
             self.read_char();
         }
 
         let num_str = self.input[start..self.curr].to_string();
-        num_str.parse().unwrap()
+        let n = num_str.parse();
+        match n {
+            Ok(u) => Ok(u),
+            _ => return Err(LexerError::InvalidInt(self.curr))
+        }
     }
 
     fn read_ident(&mut self) -> String {
@@ -52,7 +71,7 @@ impl Lexer {
         self.input[start..self.curr].to_string()
     }
 
-    pub fn next_token(&mut self) -> Result<Token, Error> {
+    pub fn next_token(&mut self) -> Result<Token, LexerError> {
         while self.ch == b' ' || self.ch == b'\n' || self.ch == b'\r' {
             self.read_char();
         }
@@ -139,9 +158,9 @@ impl Lexer {
             },
             
             // const
-            b'0'..=b'9' => return Ok(Token::Int(self.read_int())),
+            b'0'..=b'9' => return Ok(Token::Int(self.read_int()?)),
             0 => Token::EoF,
-            _ => Token::Invalid,
+            _ => return Err(LexerError::InvalidChar(self.ch as char, self.curr)),
         };
 
         self.read_char();
