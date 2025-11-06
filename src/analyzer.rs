@@ -1,3 +1,4 @@
+use std::env::var;
 use std::{collections::HashMap};
 use crate::node::ParserNode;
 use crate::symboltable::{SymbolTable, new_symbol_table};
@@ -5,7 +6,9 @@ use crate::symboltable::{SymbolTable, new_symbol_table};
 pub struct SemanticAnalyzer {
     symbol_table: Vec<HashMap<String, Symbol>>,
     scope_count: usize,
+    var_count: usize,
     pub complete_table: Vec<SymbolTable>,
+    
 }
 
 #[derive(Debug)]
@@ -34,6 +37,7 @@ pub fn new_analyzer() -> SemanticAnalyzer {
     SemanticAnalyzer {
         symbol_table: vec!(HashMap::new()),
         scope_count: 0,
+        var_count: 0,
         complete_table: Vec::new(),
     }
 }
@@ -58,10 +62,11 @@ impl SemanticAnalyzer {
                 self.complete_table.push(new_symbol_table(table, self.scope_count));
                 if self.scope_count != 0 { self.scope_count -= 1}
             },
-            ParserNode::FuncDecl { ident, args, block } => {
+            ParserNode::FuncDecl { ident, args, block, size} => {
                 if self.scope_count != 0 {
                     return Err(AnalyzerError::InvalidNode("function declaration inside block".to_string()))
                 }
+                let prev_var_count = self.var_count;
                 let name = self.get_ident(ident)?;
                 let args_size = args.len();
 
@@ -73,9 +78,10 @@ impl SemanticAnalyzer {
                     self.declare_variable(&arg.to_string(), true)?;
                 }
                 
-                
-                self.analyze_node(block)?
-
+                self.analyze_node(block)?;
+                let var_total = self.var_count - prev_var_count;
+                *size = var_total * 4;
+ 
             },
             ParserNode::Declare { ident, exp } => {
                 let name = self.get_ident(ident)?;
@@ -93,6 +99,7 @@ impl SemanticAnalyzer {
                 let name = self.get_ident(left)?;
 
                 if !self.is_declared(&name)? {
+                    
                     return Err(AnalyzerError::UndeclaredVar(name));
                 }
                 self.initialize_variable(&name)?;
@@ -106,7 +113,10 @@ impl SemanticAnalyzer {
                 self.new_scope();
                 self.analyze_node(block)?;
                 match else_stmt {
-                    Some(n) => self.analyze_node(n)?,
+                    Some(n) => {
+                        self.new_scope();
+                        self.analyze_node(n)?
+                    },
                     None => (),
                 }
             },
@@ -183,21 +193,26 @@ impl SemanticAnalyzer {
                 offset: localvar_count * 8,
             },
         );
+        self.var_count += 1;
         Ok(())
     }
 
     fn initialize_variable(&mut self, name: &String) -> Result<(), AnalyzerError> {
-        match self.current_table()?.get_mut(name) {
+        for t in self.symbol_table.iter_mut() {
+            match t.get_mut(name) {
             Some(s) => {
                 if let SymbolKind::Variable { initialized } = &mut s.kind {
                     *initialized = true;
+                    return Ok(());
                 } else {
                     return Err(AnalyzerError::InvalidNode("not a variable".into()))
                 }
             },
-            None => return Err(AnalyzerError::UndeclaredVar(name.clone()))
+            None => (),
         }
-        Ok(())
+        }
+        
+        Err(AnalyzerError::UndeclaredVar(format!("can't initialize undeclared variable '{}'", name.clone())))
     }
 
     fn declare_function(&mut self, name: &String, args_size: usize) -> Result<(), AnalyzerError> {
@@ -209,7 +224,7 @@ impl SemanticAnalyzer {
         self.current_table()?.insert(
             name.clone(), 
             Symbol {
-                kind: SymbolKind::Function { args_size: args_size }, offset: localvar_count * 8 },
+                kind: SymbolKind::Function { args_size: args_size }, offset: localvar_count * 4 },
                 
             );
         Ok(())
@@ -252,6 +267,7 @@ impl SemanticAnalyzer {
             }    
         }
         Err(AnalyzerError::UndeclaredVar(var.clone()))
+        
     }
 
     pub fn get_ident(&self, ident: &ParserNode) -> Result<String, AnalyzerError> {
@@ -269,6 +285,7 @@ impl SemanticAnalyzer {
         self.scope_count += 1;
         self.symbol_table.push(HashMap::new());
     }
+
 
     pub fn print(&self) {
         print!("Symbol Table:");
@@ -296,7 +313,8 @@ mod tests {
             "int x;", 
             "int y = 2;",
             "int main() { return 1 > 2; int x = 0; x=2; if(x*x ==2) {int y = 0; y = y + 2;} else { x = x - 1; } return x;}",
-            "int func() { return 10; } int main() { return func(); }"
+            "int func() { return 10; } int main() { return func(); }",
+            "int func() { int x = 2; return x + 10; } int main() { int y = 9; return 9 * func(); }"
         ];
         
         for input in cases {

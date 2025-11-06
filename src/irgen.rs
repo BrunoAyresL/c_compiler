@@ -9,35 +9,7 @@
 // push param, pop params
 // temp variables (t0, t1, t2, ...)
 
-// ex:
-/* int main() {
-    int x;
-    int y = 2;
-    x = y * 4 + 2;
-    return x - y;
-}
 
-main:
-    y <- 2
-    t1 <- y * 4
-    x <- t1 + 2
-    t2 <- x - y
-    ret t2
-*/
-
-// ex 2:
-/* int main() {
-    int x = 1;
-    int y = 2;
-    int z = x % y;
-    if (y == z) {
-        x = 100;
-    } else {
-     }
-
-
-} 
-*/
 
 use crate::{instruction::Instruction, node::ParserNode};
 
@@ -94,6 +66,57 @@ impl CodeGen {
                 Operand::None
             },
 
+            ParserNode::Declare { ident, exp } => {
+                match exp {
+                    Some(n) => {
+                        let dest = self.cgen(ident);     
+                        let arg1 = self.cgen(n);
+                        self.emit(Instruction::Assign { dest: dest.clone(), arg1 });
+                        dest 
+                    },
+                    None => Operand::None,
+                }
+            }
+
+            ParserNode::FuncDecl { ident, args:_, block, size } => {
+                self.emit(Instruction::Label(ident.to_string()));
+                let begin_index = self.instructions.len();
+                self.emit(Instruction::BeginFunc(*size));
+
+                let prev_count = self.temp_count;
+                self.cgen(block);
+                self.emit(Instruction::EndFunc);
+                let curr_count = self.temp_count; 
+                if let Instruction::BeginFunc(ref mut s) = self.instructions[begin_index] {
+                    *s += (curr_count - prev_count) * 4;
+                } else {
+                    panic!("instruction is not BeginFunc")
+                }
+
+                Operand::None
+            },
+
+            ParserNode::FuncCall { ident, args } => {
+
+                for arg in args {
+                    let mut t1 = self.cgen(arg);
+                    match t1 {
+                        Operand::Const(num) => {
+                            t1 = self.new_temp();
+                            self.emit(Instruction::Assign { dest: t1.clone(), arg1: Operand::Const(num) });
+                        },
+                        _ => (),
+                    }
+                    self.emit(Instruction::PushParam(t1));
+                }
+                self.emit(Instruction::LCall(ident.clone()));
+                if args.len() > 0 {
+                    let size = args.len() * 4;
+                    self.emit(Instruction::PopParams(size));
+                }
+                Operand::None
+            },
+
             // statements
             ParserNode::Assign { left, right } => {
                 let dest = self.cgen(left);     
@@ -125,6 +148,19 @@ impl CodeGen {
                 } 
                 Operand::None
             },
+            ParserNode::Return { exp } => {
+                let mut dest = self.cgen(exp);
+                match dest {
+                    Operand::Const(num) => {
+                        dest = self.new_temp();
+                        self.emit(Instruction::Assign { dest: dest.clone(), arg1: Operand::Const(num) });
+                    },
+                    _ => (),
+                }
+                self.emit(Instruction::Return { dest });
+                Operand::None
+            }
+
             // logical
             ParserNode::LogicalOr { left, right } => {
                 let arg1 = self.cgen(left);     
@@ -300,7 +336,10 @@ impl CodeGen {
                 }
                 Operand::None
             },
-            _ => Operand::None,
+            _ => {
+                println!("NOT IMPLEMENTED: {:?}", node);
+                Operand::None
+            },
         }
     }
 

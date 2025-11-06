@@ -106,6 +106,7 @@ impl Parser {
         }
         if self.next_token == Token::OpenBracket {
             self.read_token();
+            return self.parse_block();
         }
         self.parse_stmt()
     }
@@ -134,7 +135,7 @@ impl Parser {
         self.expect(Token::OpenBracket)?;
         let block = self.parse_block()?;
         let ident_node = Box::from(ParserNode::Var(ident));
-        Ok(ParserNode::FuncDecl { ident: ident_node, args, block: Box::from(block) })
+        Ok(ParserNode::FuncDecl { ident: ident_node, args, block: Box::from(block), size: 0 })
     }
     fn parse_func_args(&mut self) -> Result<Vec<ParserNode>, ParserError> {
         let mut args = Vec::new();
@@ -450,6 +451,9 @@ impl Parser {
             }
         }
         self.read_token();
+        if self.next_token == Token::Semicolon {
+            self.read_token();
+        }
         Ok(ParserNode::FuncCall { ident: id.clone(), args: args })
     }
     pub fn read_token(&mut self) {
@@ -496,9 +500,9 @@ mod tests {
     #[test]
     fn parser_function() { 
         let cases = [
-            ("int x() {}", "int x() {}"),
+            ("int x() {}", "int x()0 {}"),
             ("y(a, b)", "y(a,b)"),
-            ("int z(int a) {}","int z(int a) {}"),
+            ("int z(int a) {}","int z(int a)0 {}"),
         ];
         
         for (input, expected) in cases {

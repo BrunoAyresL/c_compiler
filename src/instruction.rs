@@ -1,16 +1,29 @@
 use crate::irgen::Operand;
 
+// todo:
+// declare
+// return
+// jump
+// 
+
+
+
 
 pub enum Instruction {
 
     Label(String),
 
     Goto(String),
-
+    BeginFunc(usize),
+    EndFunc,
+    PushParam(Operand),
+    PopParams(usize),
+    
+    LCall(String),
 
     IfZero {cond: Operand, label: String},
     Assign {dest: Operand, arg1: Operand},
-
+    Return {dest: Operand},
     // expreession
     // Expression (Vec<ParserNode>),
 
@@ -71,16 +84,38 @@ impl Instruction {
     pub fn print(&self) -> String {
         match self {
 
+
+
             Instruction::Label(l) => {
                 format!("{}:", l)
             },
             Instruction::Goto(l) => {
                 format!("   Goto {}", l)
             },
+            Instruction::BeginFunc(size) => {
+                format!("   BeginFunc {}", size)
+            },
+            Instruction::EndFunc => {
+                format!("   EndFunc")
+            },
+
+            Instruction::LCall(l) => {
+                format!("   LCall {}", l)
+            }
+            Instruction::PushParam(param) => {
+                format!("   PushParam {}", param.print())
+            }
+            Instruction::PopParams(size) => {
+                format!("   PopParams {}", size)
+            }
 
             Instruction::IfZero { cond, label } => {
                 format!("   IfZero {} Goto {}", cond.print(), label)
             },
+
+            Instruction::Return { dest } => {
+                format!("   Return {}", dest.print())
+            }
 
             Instruction::Assign { dest, arg1} => {
                 format!("   {} = {}", dest.print(), arg1.print())
@@ -148,6 +183,7 @@ impl Instruction {
             Instruction::Not { dest, arg1} => {
                 format!("   {} = !{}", dest.print(), arg1.print())
             },
+            
 
         }
     }

@@ -37,11 +37,11 @@ fn main() {
         _ => println!("program is valid"),
         
     }
-    println!("\nCode Gen:");
+    println!("\nCode Gen - TAC:");
     let mut code_gen = new_codegen();
     code_gen.cgen(&program_node);
     print!("{}", code_gen.print_instructions());
-    println!("End");
+    println!("\n-End-");
     /*
     let mut code_gen = new_code_generator(analyzer.complete_table);
     

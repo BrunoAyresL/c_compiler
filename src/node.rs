@@ -5,7 +5,7 @@ pub enum ParserNode {
     Block(Vec<ParserNode>),
     
     // statement (declaration)
-    FuncDecl {ident: Box<ParserNode>, args: Vec<ParserNode>, block: Box<ParserNode>},
+    FuncDecl {ident: Box<ParserNode>, args: Vec<ParserNode>, block: Box<ParserNode>, size: usize},
     Declare {ident: Box<ParserNode>, exp: Option<Box<ParserNode>>},
 
     // statement
@@ -84,7 +84,7 @@ impl ParserNode {
             }
 
             // statement
-            ParserNode::FuncDecl { ident, args, block } => {
+            ParserNode::FuncDecl { ident, args, block, size } => {
                 let mut s = format!("int {}(",ident.to_string());
                 for arg in args {
                     s.push_str("int ");
@@ -92,7 +92,7 @@ impl ParserNode {
                     s.push_str(", ");
                 }
                 if args.len() != 0 { s.pop(); s.pop();}
-                s.push_str(format!(") {{{}}}", block.to_string()).as_str());
+                s.push_str(format!("){} {{{}}}", size, block.to_string()).as_str());
                 s
                 
             }
@@ -113,7 +113,12 @@ impl ParserNode {
             }
 
             ParserNode::If { cond, block , else_stmt} => {
-                format!("if ({}) {{\n    {}}}\n", cond.to_string(), block.to_string())
+                let mut s = format!("if ({}) {{\n    {}}}", cond.to_string(), block.to_string());
+                match else_stmt {
+                    Some(n) => s.push_str(format!(" else {}",n.to_string()).as_str()),
+                    None => s.push('\n'),
+                }
+                s
             }
             
             ParserNode::Return { exp } => {
