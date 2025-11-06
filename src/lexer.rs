@@ -1,9 +1,9 @@
 use core::fmt;
-use crate::token::Token;
+use crate::{node::ConstValue, token::{Token, Type}};
 
 pub struct Lexer {
     input: String,
-    curr: usize,
+    pub curr: usize,
     ch: u8,
 
 }
@@ -49,7 +49,7 @@ impl Lexer {
         }
     }
 
-    fn read_int(&mut self) -> Result<usize, LexerError> {
+    fn read_int(&mut self) -> Result<i32, LexerError> {
         let start = self.curr;
         while self.ch.is_ascii_digit() {
             self.read_char();
@@ -144,12 +144,24 @@ impl Lexer {
                     Token::Assign
                 }
             }
-
+            39 => {
+                self.read_char();
+                let t = Token::Const(ConstValue::Char(self.ch as char));
+                self.read_char();
+                if self.ch != 39 {
+                    return Err(LexerError::InvalidChar(39 as char, self.curr))
+                }
+                t
+            },
             // keywords
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
                 let ident = self.read_ident();
                 return Ok(match ident.as_str() {
-                    "int" => Token::IntType,
+                    "int" => Token::Type(Type::Int),
+                    "float" => Token::Type(Type::Float),
+                    "double" => Token::Type(Type::Double),
+                    "char" => Token::Type(Type::Char),
+                    "void" => Token::Type(Type::Void),
                     "return" => Token::Return,
                     "if" => Token::If,
                     "else" => Token::Else,
@@ -158,7 +170,7 @@ impl Lexer {
             },
             
             // const
-            b'0'..=b'9' => return Ok(Token::Int(self.read_int()?)),
+            b'0'..=b'9' => return Ok(Token::Const(ConstValue::Int(self.read_int()?))),
             0 => Token::EoF,
             _ => return Err(LexerError::InvalidChar(self.ch as char, self.curr)),
         };
@@ -188,9 +200,9 @@ mod tests {
     #[test]
     fn lexer_declare() {
         let cases = [
-            ("int x;", vec![Token::IntType, Token::Ident("x".into()), Token::Semicolon, Token::EoF]),
-            ("int y = 2;", vec![Token::IntType, Token::Ident("y".into()), Token::Assign, Token::Int(2), Token::Semicolon, Token::EoF]),
-            ("int z = 2*3;", vec![Token::IntType, Token::Ident("z".into()), Token::Assign, Token::Int(2), Token::Asterisk, Token::Int(3), Token::Semicolon, Token::EoF]),
+            ("int x;", vec![Token::Type(Type::Int), Token::Ident("x".into()), Token::Semicolon, Token::EoF]),
+            ("int y = 2;", vec![Token::Type(Type::Int), Token::Ident("y".into()), Token::Assign, Token::Const(ConstValue::Int(2)), Token::Semicolon, Token::EoF]),
+            ("int z = 2*3;", vec![Token::Type(Type::Int), Token::Ident("z".into()), Token::Assign, Token::Const(ConstValue::Int(2)), Token::Asterisk, Token::Const(ConstValue::Int(3)), Token::Semicolon, Token::EoF]),
         ];
         
         for (input, expected) in cases {
@@ -201,9 +213,9 @@ mod tests {
     #[test]
     fn lexer_function() {
         let cases = [
-            ("int x() {}", vec![Token::IntType, Token::Ident("x".into()), Token::OpenParenthesis,  Token::CloseParenthesis, Token::OpenBracket, Token::CloseBracket, Token::EoF]),
+            ("int x() {}", vec![Token::Type(Type::Int), Token::Ident("x".into()), Token::OpenParenthesis,  Token::CloseParenthesis, Token::OpenBracket, Token::CloseBracket, Token::EoF]),
             ("y(a, b)", vec![Token::Ident("y".into()), Token::OpenParenthesis, Token::Ident("a".into()), Token::Comma, Token::Ident("b".into()), Token::CloseParenthesis, Token::EoF]),
-            ("int z(int a) {}", vec![Token::IntType, Token::Ident("z".into()), Token::OpenParenthesis, Token::IntType, Token::Ident("a".into()), Token::CloseParenthesis, Token::OpenBracket, Token::CloseBracket, Token::EoF]),
+            ("int z(int a) {}", vec![Token::Type(Type::Int), Token::Ident("z".into()), Token::OpenParenthesis, Token::Type(Type::Int), Token::Ident("a".into()), Token::CloseParenthesis, Token::OpenBracket, Token::CloseBracket, Token::EoF]),
         ];
         
         for (input, expected) in cases {

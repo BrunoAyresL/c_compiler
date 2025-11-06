@@ -1,20 +1,22 @@
-use std::env::var;
+use core::fmt;
 use std::{collections::HashMap};
-use crate::node::ParserNode;
+use crate::node::{ConstValue, ParserNode};
 use crate::symboltable::{SymbolTable, new_symbol_table};
+use crate::token::Type;
 
 pub struct SemanticAnalyzer {
     symbol_table: Vec<HashMap<String, Symbol>>,
     scope_count: usize,
     var_count: usize,
     pub complete_table: Vec<SymbolTable>,
-    
+    last_func: String,
 }
 
 #[derive(Debug)]
 pub struct Symbol {
    pub kind: SymbolKind,
    pub offset: usize,
+   pub stype: Type,
 }
 
 #[derive(Debug)]
@@ -24,14 +26,29 @@ pub enum SymbolKind {
 }
 #[derive(Debug)]
 pub enum AnalyzerError {
-    UndeclaredVar(String),
+    UndeclaredVar{var: String, last_func: String},
     InvalidNode(String),
     ScopeError(String),
     AlreadyDeclared(String),
     InvalidArguments(String),
-    TypeMismatch(String),
-    TableNotFound(String),
+    TypeMismatch{type1: Type, type2: Type, last_func: String},
 }
+
+impl fmt::Display for AnalyzerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AnalyzerError::UndeclaredVar { var, last_func }
+                => write!(f, "AnalyzerError: undeclared var '{}' found at {}", var, last_func),
+            AnalyzerError::TypeMismatch {type1, type2, last_func }
+                => write!(f, "AnalyzerError: type mismatch: '{}' and '{}' found at {}", type1.to_string(), type2.to_string(), last_func.to_string()),
+            AnalyzerError::InvalidNode(s) | AnalyzerError::ScopeError(s)  
+                => write!(f, "AnalyzerError: {}", s),
+            _ => write!(f, "unknown error"),
+ 
+        }
+    }
+}
+
 
 pub fn new_analyzer() -> SemanticAnalyzer {
     SemanticAnalyzer {
@@ -39,6 +56,7 @@ pub fn new_analyzer() -> SemanticAnalyzer {
         scope_count: 0,
         var_count: 0,
         complete_table: Vec::new(),
+        last_func: String::from("file"),
     }
 }
 
@@ -50,7 +68,7 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn analyze_node(&mut self, node: &mut ParserNode) -> Result<(), AnalyzerError> {
+    fn analyze_node(&mut self, node: &mut ParserNode) -> Result<Type, AnalyzerError> {
         match node {
             ParserNode::Block(nodes ) => {
                 
@@ -62,7 +80,7 @@ impl SemanticAnalyzer {
                 self.complete_table.push(new_symbol_table(table, self.scope_count));
                 if self.scope_count != 0 { self.scope_count -= 1}
             },
-            ParserNode::FuncDecl { ident, args, block, size} => {
+            ParserNode::FuncDecl { ident, args, block, size, ntype} => {
                 if self.scope_count != 0 {
                     return Err(AnalyzerError::InvalidNode("function declaration inside block".to_string()))
                 }
@@ -70,12 +88,19 @@ impl SemanticAnalyzer {
                 let name = self.get_ident(ident)?;
                 let args_size = args.len();
 
-                self.declare_function(&name, args_size)?;
+                self.last_func = name.clone();
+                self.declare_function(&name, args_size, *ntype)?;
 
                 self.new_scope();
 
                 for arg in args {
-                    self.declare_variable(&arg.to_string(), true)?;
+                    match arg {
+                        ParserNode::Var { ident, ntype } => {
+                            self.declare_variable(ident, true, *ntype)?;
+                        }
+                        _ => return Err(AnalyzerError::InvalidNode(format!("??"))),
+                    }
+                    
                 }
                 
                 self.analyze_node(block)?;
@@ -83,39 +108,44 @@ impl SemanticAnalyzer {
                 *size = var_total * 4;
  
             },
-            ParserNode::Declare { ident, exp } => {
+            ParserNode::Declare { ident, exp, ntype } => {
                 let name = self.get_ident(ident)?;
-
+                let decl_type = *ntype;
+                match ident.as_mut() {
+                    ParserNode::Var {ntype , .. } => {
+                        *ntype = decl_type;
+                    },
+                    _ => return Err(AnalyzerError::InvalidNode(format!(""))),
+                }
                 match exp {
                     Some(n) => {
-                        self.analyze_node(n)?;
-                        self.declare_variable(&name, true)?;
+                        let type2 = self.analyze_node(n)?;
+                        self.expect_type(*ntype, type2)?;
+                        self.declare_variable(&name, true, *ntype)?;
                     },
-                    None => self.declare_variable(&name, false)?,
+                    None => self.declare_variable(&name, false, *ntype)?,
                 }
-                
+                return Ok(*ntype)
             },
             ParserNode::Assign { left, right } => {
                 let name = self.get_ident(left)?;
 
                 if !self.is_declared(&name)? {
                     
-                    return Err(AnalyzerError::UndeclaredVar(name));
+                    return Err(AnalyzerError::UndeclaredVar{ var:name, last_func: self.last_func.clone()});
                 }
-                self.initialize_variable(&name)?;
-
-                self.analyze_node(right)?;
-
+                let type1 = self.initialize_variable(&name)?;
+                let type2 = self.analyze_node(right)?;
+                self.expect_type(type1, type2)?;
+                return Ok(type1);
             },
             ParserNode::If { cond, block , else_stmt} => {
-
-                self.analyze_node(cond)?;
                 self.new_scope();
                 self.analyze_node(block)?;
                 match else_stmt {
                     Some(n) => {
                         self.new_scope();
-                        self.analyze_node(n)?
+                        self.analyze_node(n)?;
                     },
                     None => (),
                 }
@@ -139,49 +169,60 @@ impl SemanticAnalyzer {
             ParserNode::NotEqual {left, right} | ParserNode::BitwiseAnd {left, right} |
             ParserNode::BitwiseXor {left, right} | ParserNode::BitwiseOr {left, right} |
             ParserNode::LogicalAnd {left, right} | ParserNode::LogicalOr {left, right} => {
-                self.analyze_node(left)?;
-                self.analyze_node(right)?;
+                let type1 = self.analyze_node(left)?;
+                let type2 = self.analyze_node(right)?;
+                self.expect_type(type1, type2)?;
+                return Ok(type1);
             },
 
             ParserNode::Neg { val } | ParserNode::Complement { val } |
             ParserNode::Not { val } | ParserNode::SubExp { val } => {
-                self.analyze_node(val)?;
+                return self.analyze_node(val);
             },
 
             ParserNode::FuncCall { ident, args } => {
-
+                let mut ntype = Type::Void;
                 match self.get_symbol(&ident) {
+                    
                     Some(s) => {
+                        ntype = s.stype;
                         match s.kind {
                             SymbolKind::Function { args_size } => {
                                 if args.len() != args_size {
                                     return Err(AnalyzerError::InvalidArguments("argument count invalid".into()));
                                 }
                             }
-                            _ => return Err(AnalyzerError::TypeMismatch(ident.clone())),
+                            _ => return Err(AnalyzerError::InvalidNode(ident.clone())),
 
                         }
                     }
-                    None => return Err(AnalyzerError::UndeclaredVar(format!("'{}' not found (func call)",ident.clone()))),
+                    None => return Err(AnalyzerError::UndeclaredVar{ var:ident.clone(), last_func: self.last_func.clone()}),
                 }
+                return Ok(ntype);
             }
 
-            ParserNode::Const(_) => {
-
-            },
-            ParserNode::Var(var) => {
-                if self.scope_count > 0 {
-                    self.is_initialized(&var)?;
+            ParserNode::Const(val) => {
+                match val {
+                    ConstValue::Int(_) => return Ok(Type::Int),
+                    ConstValue::Float(_) => return Ok(Type::Float),
+                    ConstValue::Double(_) => return Ok(Type::Double),
+                    ConstValue::Char(_) => return Ok(Type::Char),
+                    ConstValue::Void => return Ok(Type::Void),
                 }
+            },
+            ParserNode::Var {ident, ..} => {
+                self.is_initialized(&ident)?;
+                
+                return self.initialize_variable(ident);
             },
             
 
             _ => return Err(AnalyzerError::InvalidNode("unknown node".to_string()))
         }
-        Ok(())
+        Ok(Type::Void)
     }
 
-    fn declare_variable(&mut self, name: &String, initialized: bool) -> Result<(), AnalyzerError> {
+    fn declare_variable(&mut self, name: &String, initialized: bool, ntype: Type) -> Result<(), AnalyzerError> {
         if self.is_declared(name)? {
             return Err(AnalyzerError::AlreadyDeclared("variable already exists".into()));
         }
@@ -191,19 +232,20 @@ impl SemanticAnalyzer {
             Symbol { 
                 kind: SymbolKind::Variable { initialized: initialized }, 
                 offset: localvar_count * 8,
+                stype: ntype,
             },
         );
         self.var_count += 1;
         Ok(())
     }
 
-    fn initialize_variable(&mut self, name: &String) -> Result<(), AnalyzerError> {
+    fn initialize_variable(&mut self, name: &String) -> Result<Type, AnalyzerError> {
         for t in self.symbol_table.iter_mut() {
             match t.get_mut(name) {
             Some(s) => {
                 if let SymbolKind::Variable { initialized } = &mut s.kind {
                     *initialized = true;
-                    return Ok(());
+                    return Ok(s.stype);
                 } else {
                     return Err(AnalyzerError::InvalidNode("not a variable".into()))
                 }
@@ -212,10 +254,10 @@ impl SemanticAnalyzer {
         }
         }
         
-        Err(AnalyzerError::UndeclaredVar(format!("can't initialize undeclared variable '{}'", name.clone())))
+        Err(AnalyzerError::UndeclaredVar{ var:name.clone(), last_func: self.last_func.clone()})
     }
 
-    fn declare_function(&mut self, name: &String, args_size: usize) -> Result<(), AnalyzerError> {
+    fn declare_function(&mut self, name: &String, args_size: usize, ntype: Type) -> Result<(), AnalyzerError> {
         if self.is_declared(name)? {
             return Err(AnalyzerError::AlreadyDeclared("function already exists".into()));
         }
@@ -224,7 +266,7 @@ impl SemanticAnalyzer {
         self.current_table()?.insert(
             name.clone(), 
             Symbol {
-                kind: SymbolKind::Function { args_size: args_size }, offset: localvar_count * 4 },
+                kind: SymbolKind::Function { args_size: args_size }, offset: localvar_count * 4, stype: ntype, },
                 
             );
         Ok(())
@@ -266,13 +308,13 @@ impl SemanticAnalyzer {
                 None => (),
             }    
         }
-        Err(AnalyzerError::UndeclaredVar(var.clone()))
+        Err(AnalyzerError::UndeclaredVar{ var:var.clone(), last_func: self.last_func.clone()})
         
     }
 
     pub fn get_ident(&self, ident: &ParserNode) -> Result<String, AnalyzerError> {
         match ident {
-            ParserNode::Var(id) => Ok(id.clone()),
+            ParserNode::Var{ ident, ntype:_} => Ok(ident.clone()),
             _ => return Err(AnalyzerError::InvalidNode("left expression must be a variable".into()))
         }   
     }
@@ -286,6 +328,13 @@ impl SemanticAnalyzer {
         self.symbol_table.push(HashMap::new());
     }
 
+    fn expect_type(&mut self, type1: Type, type2: Type) -> Result<(), AnalyzerError> {
+        if type1 == type2 {
+            Ok(())
+        } else {
+            Err(AnalyzerError::TypeMismatch{type1, type2, last_func: self.last_func.clone()})
+        }  
+    }
 
     pub fn print(&self) {
         print!("Symbol Table:");
@@ -314,7 +363,9 @@ mod tests {
             "int y = 2;",
             "int main() { return 1 > 2; int x = 0; x=2; if(x*x ==2) {int y = 0; y = y + 2;} else { x = x - 1; } return x;}",
             "int func() { return 10; } int main() { return func(); }",
-            "int func() { int x = 2; return x + 10; } int main() { int y = 9; return 9 * func(); }"
+            "int func() { int x = 2; return x + 10; } int main() { int y = 9; return 9 * func(); }",
+            "int func(int a, int b) {int z = a / b + 2;return z - 1;}int main() {int x = 0;int y = 10;int s = 25;if (x + 5 / 3) {y = y + 2;x = y * 5;
+            s = 200;} else if (y < 2) {x = 10000 % y << s;} else {y = 999;}func(x-2, 2);}"
         ];
         
         for input in cases {
@@ -331,13 +382,13 @@ mod tests {
     fn analyzer_expression() { 
         let cases = [
             "5 + 3 == 2+1>>3*4",
-            "a + b * c - d / e & f | g ^ h << 2 >> 1 && i || j",
-            "a + b * c",
-            "a - b / c % d",
-            "a & b | c ^ d << e",
-            "(a + b) * c",
-            "!(a + b * ~c)",
-            "!a + b * ~c",
+            "int a=1;int b=1; int c=1; int d=1; int e=1; int f=1; int g=1; int h=1; int i=1; int j=1;a + b * c - d / e & f | g ^ h << 2 >> 1 && i || j",
+            "int a=1;int b=a; int c=1; a + b * c",
+            "int a=1;int b=1; int c=1; int d=1;a - b / c % d",
+            "int a=1;int b=1; int c=1; int d=1; int e=1;a & b | c ^ d << e",
+            "int a=1;int b=1; int c=1;(a + b) * c",
+            "int a=1;int b=1; int c=1;!(a + b * ~c)",
+            "int a=1;int b=1; int c=1;!a + b * ~c",
         ];
         
         for input in cases {

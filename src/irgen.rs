@@ -1,17 +1,15 @@
 
 
+// array
+// load arr[index]
+// store arr[index]
 
-// labels
-// goto ( jump )
-// if zero, ...
-// begin func (N bytes to reserve)
-// call func 
-// push param, pop params
-// temp variables (t0, t1, t2, ...)
-
+// array
+// type
+// size
 
 
-use crate::{instruction::Instruction, node::ParserNode};
+use crate::{instruction::Instruction, node::{ConstValue, ParserNode}};
 
 pub struct CodeGen {
     instructions: Vec<Instruction>,
@@ -29,7 +27,7 @@ pub fn new_codegen() -> CodeGen {
 
 #[derive(Clone)]
 pub enum Operand {
-    Const(i32),
+    Const(ConstValue),
     Var(String),
     Temp(String),
     None,
@@ -37,8 +35,8 @@ pub enum Operand {
 impl Operand {
     pub fn print(&self) -> String {
         match self {
-            Operand::Const(num) => {
-                format!("{}", num)
+            Operand::Const(val) => {
+                format!("{}", val.to_string())
             },
             Operand::Var(v) => {
                 v.clone()
@@ -66,7 +64,7 @@ impl CodeGen {
                 Operand::None
             },
 
-            ParserNode::Declare { ident, exp } => {
+            ParserNode::Declare { ident, exp, ntype:_ } => {
                 match exp {
                     Some(n) => {
                         let dest = self.cgen(ident);     
@@ -78,7 +76,7 @@ impl CodeGen {
                 }
             }
 
-            ParserNode::FuncDecl { ident, args:_, block, size } => {
+            ParserNode::FuncDecl { ident, args:_, block, size, ntype:_ } => {
                 self.emit(Instruction::Label(ident.to_string()));
                 let begin_index = self.instructions.len();
                 self.emit(Instruction::BeginFunc(*size));
@@ -322,8 +320,8 @@ impl CodeGen {
             },
 
             // factor
-            ParserNode::Var(v) => Operand::Var(v.clone()),
-            ParserNode::Const(num) => Operand::Const(*num),
+            ParserNode::Var{ ident, ntype: _} => Operand::Var(ident.clone()),
+            ParserNode::Const(val) => Operand::Const(val.clone()),
             ParserNode::SubExp { val} => {
                 self.cgen(val)
             },

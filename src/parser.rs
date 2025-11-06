@@ -1,8 +1,8 @@
 use core::fmt;
 
 use crate::lexer::{new_lexer, Lexer};
-use crate::token::Token;
-use crate::node::ParserNode;
+use crate::token::{Token, Type};
+use crate::node::{ParserNode};
 pub struct Parser {
     lexer: Lexer,
     next_token: Token,
@@ -25,7 +25,7 @@ pub fn new_parser(input: &str) -> Result<Parser, ParserError> {
 pub enum ParserError {
     InvalidInput,
     InvalidToken {t: Token, msg: String},
-    UnexpectedToken {expected: Token, found: Token},
+    UnexpectedToken {expected: Token, found: Token, pos: usize},
 
 }
 
@@ -34,8 +34,8 @@ impl fmt::Display for ParserError {
         match self {
             ParserError::InvalidToken {t, msg} => write!(f, "ParserError: invalid token '{:?}' found at {}", t, msg),
             ParserError::InvalidInput => write!(f, "ParserError: string input is invalid"),
-            ParserError::UnexpectedToken { expected, found } 
-                => write!(f, "ParserError: expected '{:?}', found '{:?}'", expected, found),
+            ParserError::UnexpectedToken { expected, found, pos } 
+                => write!(f, "ParserError: expected '{:?}', found '{:?}' at {}", expected, found, pos),
  
         }
     }
@@ -61,29 +61,37 @@ impl Parser {
         match self.next_token {
             Token::If => self.parse_if(),
             Token::Return => self.parse_return(),
-            Token::IntType => {
+            Token::Type(t) => {
                 self.read_token();
                 if !matches!(self.next_token,Token::Ident(_)) {
-                    return Err(ParserError::InvalidToken{ t:self.next_token.clone(), msg:String::from("parse_stmt > ! a Ident")})
+                    return Err(ParserError::InvalidToken{ t:self.next_token.clone(), msg:String::from("parse_stmt > not a Ident")})
                 }
                 let mut ident = String::new();
                 match &self.next_token {
                     Token::Ident(name) => {
                         ident.push_str(name);
                     }
-                    _ => return Err(ParserError::UnexpectedToken{ expected: Token::Ident(String::new()), found:self.next_token.clone()})
+                    _ => return Err(ParserError::UnexpectedToken
+                        { expected: Token::Ident(String::new()), found:self.next_token.clone(), pos: self.lexer.curr})
                 }
 
                 self.read_token();
                 match self.next_token {
-                    Token::Assign | Token::Semicolon => self.parse_var_decl(ident),
-                    Token::OpenParenthesis => self.parse_func_decl(ident),
-                    _ => return Err(ParserError::UnexpectedToken{ expected: Token::OpenParenthesis, found:self.next_token.clone()})
+                    Token::Assign | Token::Semicolon => self.parse_var_decl(ident, t.clone()),
+                    Token::OpenParenthesis => self.parse_func_decl(ident, t.clone()),
+                    _ => return Err(ParserError::UnexpectedToken
+                        { expected: Token::OpenParenthesis, found:self.next_token.clone(), pos: self.lexer.curr})
                 }
                 
             },
             Token::OpenBracket => self.parse_block(),
-            _ => self.parse_expression(),
+            _ => {
+                 let n = self.parse_expression()?;
+                 if self.next_token == Token::Semicolon {
+                    self.read_token();
+                 }
+                 Ok(n)
+             } ,
         }
     }
     fn parse_if(&mut self) -> Result<ParserNode, ParserError> {
@@ -102,7 +110,8 @@ impl Parser {
     }
     fn parse_else(&mut self) -> Result<ParserNode, ParserError> {
         if self.next_token != Token::If && self.next_token != Token::OpenBracket {
-            return Err(ParserError::UnexpectedToken { expected:Token::OpenBracket, found: self.next_token.clone() });
+            return Err(ParserError::UnexpectedToken
+                { expected:Token::OpenBracket, found: self.next_token.clone(), pos: self.lexer.curr});
         }
         if self.next_token == Token::OpenBracket {
             self.read_token();
@@ -116,34 +125,41 @@ impl Parser {
         self.expect(Token::Semicolon)?;
         Ok(ParserNode::Return { exp: Box::from(exp) })
     }
-    fn parse_var_decl(&mut self, ident: String) -> Result<ParserNode, ParserError> {
-        let ident_node = Box::from(ParserNode::Var(ident));
+    fn parse_var_decl(&mut self, ident: String, t: Type) -> Result<ParserNode, ParserError> {
+        let ident_node = Box::from(ParserNode::Var{ident, ntype: t});
         if self.next_token == Token::Assign {
             self.read_token();
             let exp = self.parse_logical_or()?;
             self.expect(Token::Semicolon)?;
-            Ok(ParserNode::Declare { ident: ident_node, exp: Some(Box::from(exp)) })
+            Ok(ParserNode::Declare { ident: ident_node, exp: Some(Box::from(exp)), ntype: t })
         } else {
             self.expect(Token::Semicolon)?;
-            Ok(ParserNode::Declare { ident: ident_node, exp: None })
+            Ok(ParserNode::Declare { ident: ident_node, exp: None, ntype: t})
         }
     }
-    fn parse_func_decl(&mut self, ident: String) -> Result<ParserNode, ParserError> {
+    fn parse_func_decl(&mut self, ident: String, t: Type) -> Result<ParserNode, ParserError> {
         self.read_token();
         let args = self.parse_func_args()?;
         self.expect(Token::CloseParenthesis)?;
         self.expect(Token::OpenBracket)?;
         let block = self.parse_block()?;
-        let ident_node = Box::from(ParserNode::Var(ident));
-        Ok(ParserNode::FuncDecl { ident: ident_node, args, block: Box::from(block), size: 0 })
+        let ident_node = Box::from(ParserNode::Var{ident, ntype: t});
+        Ok(ParserNode::FuncDecl { ident: ident_node, args, block: Box::from(block), size: 0, ntype: t })
     }
     fn parse_func_args(&mut self) -> Result<Vec<ParserNode>, ParserError> {
         let mut args = Vec::new();
         while self.next_token != Token::CloseParenthesis {
-            self.expect(Token::IntType)?;
+            let mut ntype = Type::Void;
+            if let Token::Type(t) = &self.next_token {
+                ntype = t.clone();
+                self.read_token();
+            } else {
+                return Err(ParserError::UnexpectedToken
+                    { expected: Token::Type(Type::Void), found: self.next_token.clone(), pos: self.lexer.curr })
+            }
             match &self.next_token {
                 Token::Ident(name) => {
-                    args.push(ParserNode::Var(name.clone())); 
+                    args.push(ParserNode::Var{ident: name.clone(), ntype}); 
                     self.read_token();
                 },
                 _ => return Err(ParserError::InvalidToken { t:self.next_token.clone(), msg: String::from("parse_func_args") }),
@@ -424,10 +440,10 @@ impl Parser {
                 if self.next_token == Token::OpenParenthesis {
                     return self.parse_func_call(id.clone())
                 }
-                Ok(ParserNode::Var(id.clone()))
+                Ok(ParserNode::Var{ident: id.clone(), ntype: Type::Void})
             },
-            Token::Int(num) => {
-                let node = ParserNode::Const(num as i32);
+            Token::Const(val) => {
+                let node = ParserNode::Const(val);
                 self.read_token();
                 Ok(node)
             },
@@ -451,9 +467,7 @@ impl Parser {
             }
         }
         self.read_token();
-        if self.next_token == Token::Semicolon {
-            self.read_token();
-        }
+
         Ok(ParserNode::FuncCall { ident: id.clone(), args: args })
     }
     pub fn read_token(&mut self) {
@@ -461,13 +475,13 @@ impl Parser {
             self.next_token = self.lexer.next_token().expect("Erro (rt)");
         }
     }
-    fn expect(&mut self, t: Token) -> Result<Token, ParserError>{
+    fn expect(&mut self, t: Token) -> Result<Token, ParserError> {
         let tok = self.next_token.clone();
         if self.next_token == t {
             self.read_token();
             Ok(tok)
         } else {
-            Err(ParserError::UnexpectedToken{expected: t, found: tok})
+            Err(ParserError::UnexpectedToken{expected: t, found: tok, pos: self.lexer.curr})
         }
     }
 }

@@ -1,0 +1,49 @@
+func:
+   BeginFunc 24
+   t0 = a / b
+   t1 = t0 + 2
+   z = t1
+   t2 = z - 1
+   Return t2
+   EndFunc
+main:
+   BeginFunc 72
+   x = 0
+   y = 10
+   s = 25
+   c = 'h'
+   d = 'i'
+   t3 = c == d
+   IfZero t3 Goto L0
+   t4 = 0
+   Return t4
+L0:
+   t5 = 5 / 3
+   t6 = x + t5
+   IfZero t6 Goto L2
+   t7 = y + 2
+   y = t7
+   t8 = y * 5
+   x = t8
+   s = 200
+   Goto L1
+L2:
+   t9 = y < 2
+   IfZero t9 Goto L4
+   t10 = 10000 % y
+   t11 = t10 << s
+   x = t11
+   Goto L3
+L4:
+   y = 999
+   t12 = x + y
+   h = t12
+L3:
+L1:
+   t13 = x - 2
+   PushParam t13
+   t14 = 2
+   PushParam t14
+   LCall func
+   PopParams 8
+   EndFunc

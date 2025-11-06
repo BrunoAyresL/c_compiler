@@ -1,3 +1,24 @@
+use crate::token::Type;
+
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub enum ConstValue {
+    Int(i32),
+    Float(f32),
+    Double(f64),
+    Char(char),
+    Void,
+}
+impl ConstValue {
+    pub fn to_string(&self) -> String {
+        match self {
+            ConstValue::Int(n) => format!("{}", n),
+            ConstValue::Float(n) => format!("{}", n),
+            ConstValue::Double(n) => format!("{}", n),
+            ConstValue::Char(c) => format!("'{}'", c), 
+            ConstValue::Void => format!(""), 
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum ParserNode {
@@ -5,8 +26,8 @@ pub enum ParserNode {
     Block(Vec<ParserNode>),
     
     // statement (declaration)
-    FuncDecl {ident: Box<ParserNode>, args: Vec<ParserNode>, block: Box<ParserNode>, size: usize},
-    Declare {ident: Box<ParserNode>, exp: Option<Box<ParserNode>>},
+    FuncDecl {ident: Box<ParserNode>, args: Vec<ParserNode>, block: Box<ParserNode>, size: usize, ntype: Type},
+    Declare {ident: Box<ParserNode>, exp: Option<Box<ParserNode>>, ntype: Type},
 
     // statement
     Assign {left: Box<ParserNode>, right: Box<ParserNode>},
@@ -61,8 +82,8 @@ pub enum ParserNode {
 
     // factor
     FuncCall{ident: String, args: Vec<ParserNode>},
-    Var(String),
-    Const(i32),
+    Var{ ident: String, ntype: Type},
+    Const(ConstValue),
     SubExp {val: Box<ParserNode>},
 
     // other
@@ -84,8 +105,8 @@ impl ParserNode {
             }
 
             // statement
-            ParserNode::FuncDecl { ident, args, block, size } => {
-                let mut s = format!("int {}(",ident.to_string());
+            ParserNode::FuncDecl { ident, args, block, size, ntype } => {
+                let mut s = format!("{} {}(", ntype.to_string(), ident.to_string());
                 for arg in args {
                     s.push_str("int ");
                     s.push_str(&arg.to_string());
@@ -96,10 +117,10 @@ impl ParserNode {
                 s
                 
             }
-            ParserNode::Declare{ ident, exp } => {
+            ParserNode::Declare{ ident, exp, ntype } => {
                 match exp {
                     None => {
-                        format!("int {};\n",ident.to_string())
+                        format!("{} {};\n", ntype.to_string(), ident.to_string())
                     },
                     Some(exp) => {
                         format!("int {} = {};\n",ident.to_string(), exp.to_string())
@@ -221,8 +242,8 @@ impl ParserNode {
                 s.push(')');
                 s
             }
-            ParserNode::Var(id) => {
-                id.to_string()
+            ParserNode::Var { ident, ntype:_ } => {
+                ident.to_string()
             }
             ParserNode::Const(num) => {
                     format!("{}", num.to_string())

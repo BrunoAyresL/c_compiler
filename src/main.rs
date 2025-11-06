@@ -1,4 +1,4 @@
-use std::{fs, process::Command};
+use std::{fs};
 use crate::{analyzer::new_analyzer, irgen::new_codegen, parser::new_parser};
 
 pub mod lexer;
@@ -12,6 +12,7 @@ pub mod irgen;
 pub mod instruction;
 
 fn main() {
+    println!("\n-Start-");
     let input = fs::read_to_string(&"code.c")
         .expect("file not found");
 
@@ -23,7 +24,7 @@ fn main() {
         Ok(v) => v,
         Err(e) => panic!("{}", e)
     };
-    //println!("\nresult:\n");
+    println!("parsing done");
     //println!("{}", program_node.to_string());
 
     println!("analyzing...");
@@ -31,29 +32,16 @@ fn main() {
     let res = analyzer.analyze(&mut program_node);
     match res {
         Err(e) => {
-            println!("Erro: {:?}", e);
+            println!("Err: {}", e);
             //analyzer.print();
         },
-        _ => println!("program is valid"),
+        _ => println!("analyzing done"),
         
     }
-    println!("\nCode Gen - TAC:");
     let mut code_gen = new_codegen();
     code_gen.cgen(&program_node);
-    print!("{}", code_gen.print_instructions());
-    println!("\n-End-");
-    /*
-    let mut code_gen = new_code_generator(analyzer.complete_table);
+    fs::write("tac.txt", code_gen.print_instructions()).expect("write file failed");
     
-    println!("assembly:\n{}", code_gen.gen_assembly(&program_node));
-    fs::write("output.s", code_gen.gen_assembly(&program_node)).expect("can't create file");
-    Command::new("gcc")
-        .arg("output.s")
-        .arg("-o")
-        .arg("out")
-        .spawn()
-        .expect("Failed");
-     */
-     
+    println!("-End-");
 }
 
