@@ -1,5 +1,5 @@
 use std::{fs, process::Command};
-use crate::{analyzer::new_analyzer, parser::new_parser};
+use crate::{analyzer::new_analyzer, irgen::new_codegen, parser::new_parser};
 
 pub mod lexer;
 pub mod parser;
@@ -8,34 +8,40 @@ pub mod node;
 pub mod analyzer;
 pub mod error;
 pub mod symboltable;
+pub mod irgen;
+pub mod instruction;
 
 fn main() {
     let input = fs::read_to_string(&"code.c")
         .expect("file not found");
 
-    println!("code.c input:\n{input}");
+    //println!("code.c input:\n{input}");
 
     let mut parser = new_parser(input.as_str()).unwrap();
-    println!("\nparsing...");
+    println!("parsing...");
     let mut program_node = match parser.parse() {
         Ok(v) => v,
         Err(e) => panic!("{}", e)
     };
-    println!("\nresult:\n");
-    println!("{}", program_node.to_string());
+    //println!("\nresult:\n");
+    //println!("{}", program_node.to_string());
 
-    println!("\nanalyzing...");
+    println!("analyzing...");
     let mut analyzer = new_analyzer();
     let res = analyzer.analyze(&mut program_node);
     match res {
         Err(e) => {
             println!("Erro: {:?}", e);
-            analyzer.print();
+            //analyzer.print();
         },
         _ => println!("program is valid"),
         
     }
-
+    println!("\nCode Gen:");
+    let mut code_gen = new_codegen();
+    code_gen.cgen(&program_node);
+    print!("{}", code_gen.print_instructions());
+    println!("End");
     /*
     let mut code_gen = new_code_generator(analyzer.complete_table);
     

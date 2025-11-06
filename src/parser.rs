@@ -426,7 +426,7 @@ impl Parser {
                 Ok(ParserNode::Var(id.clone()))
             },
             Token::Int(num) => {
-                let node = ParserNode::Const(num);
+                let node = ParserNode::Const(num as i32);
                 self.read_token();
                 Ok(node)
             },

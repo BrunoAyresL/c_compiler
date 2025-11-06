@@ -62,7 +62,7 @@ pub enum ParserNode {
     // factor
     FuncCall{ident: String, args: Vec<ParserNode>},
     Var(String),
-    Const(usize),
+    Const(i32),
     SubExp {val: Box<ParserNode>},
 
     // other

@@ -1,0 +1,328 @@
+
+
+
+// labels
+// goto ( jump )
+// if zero, ...
+// begin func (N bytes to reserve)
+// call func 
+// push param, pop params
+// temp variables (t0, t1, t2, ...)
+
+// ex:
+/* int main() {
+    int x;
+    int y = 2;
+    x = y * 4 + 2;
+    return x - y;
+}
+
+main:
+    y <- 2
+    t1 <- y * 4
+    x <- t1 + 2
+    t2 <- x - y
+    ret t2
+*/
+
+// ex 2:
+/* int main() {
+    int x = 1;
+    int y = 2;
+    int z = x % y;
+    if (y == z) {
+        x = 100;
+    } else {
+     }
+
+
+} 
+*/
+
+use crate::{instruction::Instruction, node::ParserNode};
+
+pub struct CodeGen {
+    instructions: Vec<Instruction>,
+    temp_count: usize,
+    label_count: usize,
+}
+
+pub fn new_codegen() -> CodeGen {
+    CodeGen {
+        instructions: Vec::new(),
+        temp_count: 0,
+        label_count: 0,
+    }
+}
+
+#[derive(Clone)]
+pub enum Operand {
+    Const(i32),
+    Var(String),
+    Temp(String),
+    None,
+}
+impl Operand {
+    pub fn print(&self) -> String {
+        match self {
+            Operand::Const(num) => {
+                format!("{}", num)
+            },
+            Operand::Var(v) => {
+                v.clone()
+            },
+            Operand::Temp(t) => {
+                t.clone()
+            },
+            Operand::None => String::new()
+        }
+    }
+}
+
+
+impl CodeGen {
+    fn emit(&mut self, tac: Instruction) {
+        self.instructions.push(tac);
+    }
+
+    pub fn cgen(&mut self, node: &ParserNode) -> Operand {
+        match node {
+            ParserNode::Block(nodes) => {
+                for n in nodes {
+                    self.cgen(n);
+                }
+                Operand::None
+            },
+
+            // statements
+            ParserNode::Assign { left, right } => {
+                let dest = self.cgen(left);     
+                let arg1 = self.cgen(right);
+                self.emit(Instruction::Assign { dest: dest.clone(), arg1 });
+                dest      
+            },
+
+            ParserNode::If { cond, block, else_stmt } => {
+                match else_stmt {
+                    Some(n) => {
+                        let cond = self.cgen(cond);
+                        let end_label = self.new_label();
+                        let else_label = self.new_label();
+                        self.emit(Instruction::IfZero { cond, label: else_label.clone() });
+                        self.cgen(&block);
+                        self.emit(Instruction::Goto(end_label.clone()));
+                        self.emit(Instruction::Label(else_label));
+                        self.cgen(&n);
+                        self.emit(Instruction::Label(end_label));
+                    },
+                    None => {
+                        let cond = self.cgen(cond);
+                        let end_label = self.new_label();
+                        self.emit(Instruction::IfZero { cond, label: end_label.clone() });
+                        self.cgen(&block);
+                        self.emit(Instruction::Label(end_label));
+                    }
+                } 
+                Operand::None
+            },
+            // logical
+            ParserNode::LogicalOr { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::LogicalOr { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+            ParserNode::LogicalAnd { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::LogicalAnd { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+
+            // bitwise
+            ParserNode::BitwiseOr { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::BitwiseOr { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+            ParserNode::BitwiseXor { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::BitwiseXor { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+            ParserNode::BitwiseAnd { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::BitwiseAnd { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+
+            // equality
+            ParserNode::Equal { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::Equal { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+            ParserNode::NotEqual { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::NotEqual { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+
+            // relational
+            ParserNode::Greater { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::Greater { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+            ParserNode::GreaterEqual { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::GreaterEqual { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+            ParserNode::Less { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::Less { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+            ParserNode::LessEqual { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::LessEqual { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+
+            // shift
+            ParserNode::ShiftLeft { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::ShiftLeft { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+            ParserNode::ShiftRight { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::ShiftRight { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+            
+            // additive
+            ParserNode::Add { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::Add { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+            ParserNode::Sub { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::Sub { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+
+            // term
+            ParserNode::Mul { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::Mul { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+            ParserNode::Div { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::Div { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+            ParserNode::Mod { left, right } => {
+                let arg1 = self.cgen(left);     
+                let arg2 = self.cgen(right); 
+                let dest = self.new_temp();  
+                self.emit(Instruction::Mod { dest: dest.clone(), arg1, arg2 });
+                dest
+            },
+
+            // unary
+            ParserNode::Neg { val} => {
+                let dest = self.new_temp();
+                let arg1 = self.cgen(val);    
+                self.emit(Instruction::Neg { dest: dest.clone(), arg1 });
+                dest
+            },
+            ParserNode::Complement { val} => {
+                let dest = self.new_temp();
+                let arg1 = self.cgen(val);    
+                self.emit(Instruction::Complement { dest: dest.clone(), arg1 });
+                dest
+            },
+            ParserNode::Not { val} => {
+                let dest = self.new_temp();
+                let arg1 = self.cgen(val);    
+                self.emit(Instruction::Not { dest: dest.clone(), arg1 });
+                dest
+            },
+
+            // factor
+            ParserNode::Var(v) => Operand::Var(v.clone()),
+            ParserNode::Const(num) => Operand::Const(*num),
+            ParserNode::SubExp { val} => {
+                self.cgen(val)
+            },
+
+
+            // other
+            ParserNode::Expression( nodes) => {
+                for n in nodes.iter() {
+                    self.cgen(n);
+                }
+                Operand::None
+            },
+            _ => Operand::None,
+        }
+    }
+
+    fn new_temp(&mut self) -> Operand {
+        let t = format!("t{}", self.temp_count);
+        self.temp_count += 1;
+        Operand::Temp(t)
+    }
+    fn new_label(&mut self) -> String {
+        let l = format!("L{}", self.label_count);
+        self.label_count += 1;
+        l
+    }
+
+    pub fn print_instructions(&self) -> String {
+        let mut s = String::new();
+        for inst in self.instructions.iter() {
+            s.push_str(&inst.print().as_str());
+            s.push_str("\n");
+        }
+        s
+    }
+
+}
+

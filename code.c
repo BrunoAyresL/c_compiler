@@ -1,14 +1,6 @@
-int func(int x, int y) {
-    return x / y;
+if (x + 5 / 3) {
+    y + 2
+    x = y * 5;
+} else {
+    x = 10000 * 10000;
 }
-
-int main() {
-    int x = 0;
-    int y = 2 + x;
-    int z = func(x, y);
-    return x * y;
-    if (x > 2) {
-        return 2;
-    } 
-}
-
