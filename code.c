@@ -12,7 +12,16 @@ int main() {
     char c = 'h';
     char d = 'i';
     if (c == d) {
-        return 0;
+        x = 1;
+        if (c == d) {
+            x = 2;
+            if (c == d) {
+                x = 3;
+                if (c == d) {
+                    x = 4;
+                }
+            }
+        }
     }
 
     if (x + 5 / 3) {

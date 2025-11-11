@@ -7,9 +7,9 @@ pub mod token;
 pub mod node;
 pub mod analyzer;
 pub mod error;
-pub mod symboltable;
 pub mod irgen;
 pub mod instruction;
+pub mod frame;
 
 fn main() {
     println!("\n-Start-");
@@ -38,7 +38,8 @@ fn main() {
         _ => println!("analyzing done"),
         
     }
-    let mut code_gen = new_codegen();
+
+    let mut code_gen = new_codegen(analyzer.function_frames);
     code_gen.cgen(&program_node);
     fs::write("tac.txt", code_gen.print_instructions()).expect("write file failed");
     

@@ -144,7 +144,7 @@ impl Parser {
         self.expect(Token::OpenBracket)?;
         let block = self.parse_block()?;
         let ident_node = Box::from(ParserNode::Var{ident, ntype: t});
-        Ok(ParserNode::FuncDecl { ident: ident_node, args, block: Box::from(block), size: 0, ntype: t })
+        Ok(ParserNode::FuncDecl { ident: ident_node, args, block: Box::from(block), ntype: t })
     }
     fn parse_func_args(&mut self) -> Result<Vec<ParserNode>, ParserError> {
         let mut args = Vec::new();
@@ -514,9 +514,9 @@ mod tests {
     #[test]
     fn parser_function() { 
         let cases = [
-            ("int x() {}", "int x()0 {}"),
+            ("int x() {}", "int x() {}"),
             ("y(a, b)", "y(a,b)"),
-            ("int z(int a) {}","int z(int a)0 {}"),
+            ("int z(int a) {}","int z(int a) {}"),
         ];
         
         for (input, expected) in cases {

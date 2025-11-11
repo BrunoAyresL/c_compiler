@@ -8,7 +8,6 @@ pub enum Type {
     Double,
     Char,
     Void,
-    None,
 }
 impl Type {
     pub fn to_string(&self) -> String {
@@ -18,7 +17,16 @@ impl Type {
             Type::Double => format!("double"),
             Type::Char => format!("char"),
             Type::Void => format!("void"),
-            Type::None => format!("--- NONE ---"),
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            Type::Int => 4,
+            Type::Float => 4,
+            Type::Double => 8,
+            Type::Char => 4,
+            Type::Void => 4,
         }
     }
 }

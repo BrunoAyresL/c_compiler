@@ -3,15 +3,12 @@
 	.globl	func
 	.def	func;	.scl	2;	.type	32;	.endef
 func:
-INICIA A FUNCAO
 	pushq	%rbp
 	movq	%rsp, %rbp
-PEGA OS ARGS
 	movl	%ecx, 16(%rbp)
 	movl	%edx, 24(%rbp)
 	movl	16(%rbp), %eax
 	cltd
-DIVIDE (salvo em eax, mesmo que retorna)
 	idivl	24(%rbp)
 	popq	%rbp
 	ret

@@ -1,25 +1,26 @@
 use core::fmt;
 use std::{collections::HashMap};
+use crate::frame::{Frame, new_frame};
 use crate::node::{ConstValue, ParserNode};
-use crate::symboltable::{SymbolTable, new_symbol_table};
 use crate::token::Type;
 
 pub struct SemanticAnalyzer {
     symbol_table: Vec<HashMap<String, Symbol>>,
+    pub function_frames: HashMap<String, Frame>,
+    current_frame: Option<Frame>,
     scope_count: usize,
-    var_count: usize,
-    pub complete_table: Vec<SymbolTable>,
-    last_func: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Symbol {
-   pub kind: SymbolKind,
-   pub offset: usize,
-   pub stype: Type,
+    pub name: String,
+    pub kind: SymbolKind,
+    pub scope: usize,
+    pub offset: i32,
+    pub stype: Type,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SymbolKind {
     Variable { initialized: bool },
     Function { args_size: usize },
@@ -53,10 +54,9 @@ impl fmt::Display for AnalyzerError {
 pub fn new_analyzer() -> SemanticAnalyzer {
     SemanticAnalyzer {
         symbol_table: vec!(HashMap::new()),
+        function_frames: HashMap::new(),
+        current_frame: None,
         scope_count: 0,
-        var_count: 0,
-        complete_table: Vec::new(),
-        last_func: String::from("file"),
     }
 }
 
@@ -64,7 +64,10 @@ impl SemanticAnalyzer {
     pub fn analyze(&mut self, program_node: &mut ParserNode) -> Result<(), AnalyzerError> {
         // self.print();
         self.analyze_node(program_node)?;
-        
+        if self.current_frame.is_some() {
+            let frame = self.current_frame.take().unwrap();
+            self.function_frames.insert(frame.name.clone(), frame);
+        }
         Ok(())
     }
 
@@ -76,37 +79,34 @@ impl SemanticAnalyzer {
                     self.analyze_node(n)?;
                 }
 
-                let table = self.symbol_table.pop().unwrap();
-                self.complete_table.push(new_symbol_table(table, self.scope_count));
+                
+                self.symbol_table.pop().unwrap();
                 if self.scope_count != 0 { self.scope_count -= 1}
             },
-            ParserNode::FuncDecl { ident, args, block, size, ntype} => {
+            ParserNode::FuncDecl { ident, args, block, ntype} => {
                 if self.scope_count != 0 {
                     return Err(AnalyzerError::InvalidNode("function declaration inside block".to_string()))
                 }
-                let prev_var_count = self.var_count;
+
                 let name = self.get_ident(ident)?;
-                let args_size = args.len();
 
-                self.last_func = name.clone();
-                self.declare_function(&name, args_size, *ntype)?;
-
-                self.new_scope();
-
-                for arg in args {
-                    match arg {
-                        ParserNode::Var { ident, ntype } => {
-                            self.declare_variable(ident, true, *ntype)?;
-                        }
-                        _ => return Err(AnalyzerError::InvalidNode(format!("??"))),
-                    }
-                    
+                if self.current_frame.is_some() {
+                    let frame = self.current_frame.take().unwrap();
+                    self.function_frames.insert(frame.name.clone(), frame);
                 }
-                
+
+                self.current_frame = Some(new_frame(name.clone()));
+
+                let args_size = args.len();
+                for arg in args {
+                    if let ParserNode::Var { ident, ntype } = arg {
+                        self.declare_param(ident, true, *ntype)?;
+                    }
+                }
+
+                self.declare_function(&name, args_size, ntype.clone())?;
+                self.new_scope();
                 self.analyze_node(block)?;
-                let var_total = self.var_count - prev_var_count;
-                *size = var_total * 4;
- 
             },
             ParserNode::Declare { ident, exp, ntype } => {
                 let name = self.get_ident(ident)?;
@@ -132,7 +132,7 @@ impl SemanticAnalyzer {
 
                 if !self.is_declared(&name)? {
                     
-                    return Err(AnalyzerError::UndeclaredVar{ var:name, last_func: self.last_func.clone()});
+                    return Err(AnalyzerError::UndeclaredVar{ var:name, last_func: self.frame_string()});
                 }
                 let type1 = self.initialize_variable(&name)?;
                 let type2 = self.analyze_node(right)?;
@@ -140,6 +140,7 @@ impl SemanticAnalyzer {
                 return Ok(type1);
             },
             ParserNode::If { cond, block , else_stmt} => {
+                self.analyze_node(cond)?;
                 self.new_scope();
                 self.analyze_node(block)?;
                 match else_stmt {
@@ -181,11 +182,11 @@ impl SemanticAnalyzer {
             },
 
             ParserNode::FuncCall { ident, args } => {
-                let mut ntype = Type::Void;
+                let mut _ntype = Type::Void;
                 match self.get_symbol(&ident) {
                     
                     Some(s) => {
-                        ntype = s.stype;
+                        _ntype = s.stype;
                         match s.kind {
                             SymbolKind::Function { args_size } => {
                                 if args.len() != args_size {
@@ -196,9 +197,10 @@ impl SemanticAnalyzer {
 
                         }
                     }
-                    None => return Err(AnalyzerError::UndeclaredVar{ var:ident.clone(), last_func: self.last_func.clone()}),
+                    None => return Err(AnalyzerError::UndeclaredVar{ var:ident.clone(), last_func: self.frame_string()}),
                 }
-                return Ok(ntype);
+
+                return Ok(_ntype);
             }
 
             ParserNode::Const(val) => {
@@ -226,16 +228,40 @@ impl SemanticAnalyzer {
         if self.is_declared(name)? {
             return Err(AnalyzerError::AlreadyDeclared("variable already exists".into()));
         }
-        let localvar_count = self.get_localvar_count()?;
+        let scope = self.scope_count;
+        if let Some(frame) = &mut self.current_frame {
+            frame.allocate_local(name.clone(), self.scope_count,ntype);
+        }
         self.current_table()?.insert(
             name.clone(), 
-            Symbol { 
+            Symbol {
+                name: name.clone(),
                 kind: SymbolKind::Variable { initialized: initialized }, 
-                offset: localvar_count * 8,
+                scope,
+                offset: 0,
                 stype: ntype,
             },
         );
-        self.var_count += 1;
+        Ok(())
+    }
+    fn declare_param(&mut self, name: &String, initialized: bool, ntype: Type) -> Result<(), AnalyzerError> {
+        if self.is_declared(name)? {
+            return Err(AnalyzerError::AlreadyDeclared("variable already exists".into()));
+        }
+        let scope = self.scope_count;
+        if let Some(frame) = &mut self.current_frame {
+            frame.allocate_param(name.clone(), self.scope_count,ntype);
+        }
+        self.current_table()?.insert(
+            name.clone(), 
+            Symbol {
+                name: name.clone(),
+                kind: SymbolKind::Variable { initialized: initialized }, 
+                scope,
+                offset: 0,
+                stype: ntype,
+            },
+        );
         Ok(())
     }
 
@@ -254,19 +280,22 @@ impl SemanticAnalyzer {
         }
         }
         
-        Err(AnalyzerError::UndeclaredVar{ var:name.clone(), last_func: self.last_func.clone()})
+        Err(AnalyzerError::UndeclaredVar{ var:name.clone(), last_func: self.frame_string()})
     }
 
     fn declare_function(&mut self, name: &String, args_size: usize, ntype: Type) -> Result<(), AnalyzerError> {
         if self.is_declared(name)? {
             return Err(AnalyzerError::AlreadyDeclared("function already exists".into()));
         }
-
-        let localvar_count = self.get_localvar_count()?;
+        let scope = self.scope_count;
         self.current_table()?.insert(
             name.clone(), 
             Symbol {
-                kind: SymbolKind::Function { args_size: args_size }, offset: localvar_count * 4, stype: ntype, },
+                name: name.clone(),
+                kind: SymbolKind::Function { args_size: args_size },
+                scope: scope,
+                offset: 0, 
+                stype: ntype, },
                 
             );
         Ok(())
@@ -308,7 +337,7 @@ impl SemanticAnalyzer {
                 None => (),
             }    
         }
-        Err(AnalyzerError::UndeclaredVar{ var:var.clone(), last_func: self.last_func.clone()})
+        Err(AnalyzerError::UndeclaredVar{ var:var.clone(), last_func: self.frame_string()})
         
     }
 
@@ -332,7 +361,7 @@ impl SemanticAnalyzer {
         if type1 == type2 {
             Ok(())
         } else {
-            Err(AnalyzerError::TypeMismatch{type1, type2, last_func: self.last_func.clone()})
+            Err(AnalyzerError::TypeMismatch{type1, type2, last_func: self.frame_string()})
         }  
     }
 
@@ -344,6 +373,13 @@ impl SemanticAnalyzer {
                 print!(" {}", s);
             }
             print!(" )");
+        }
+    }
+
+    pub fn frame_string(&self) -> String {
+        match &self.current_frame {
+            Some(frame) => frame.name.clone(),
+            None => String::from("_global"),
         }
     }
 

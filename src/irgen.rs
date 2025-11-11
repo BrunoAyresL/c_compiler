@@ -9,17 +9,23 @@
 // size
 
 
-use crate::{instruction::Instruction, node::{ConstValue, ParserNode}};
+use std::collections::HashMap;
+
+use rand::seq::index;
+
+use crate::{frame::Frame, instruction::Instruction, node::{ConstValue, ParserNode}};
 
 pub struct CodeGen {
     instructions: Vec<Instruction>,
+    frames: HashMap<String, Frame>,
     temp_count: usize,
     label_count: usize,
 }
 
-pub fn new_codegen() -> CodeGen {
+pub fn new_codegen(frames: HashMap<String, Frame>) -> CodeGen {
     CodeGen {
         instructions: Vec::new(),
+        frames,
         temp_count: 0,
         label_count: 0,
     }
@@ -76,21 +82,13 @@ impl CodeGen {
                 }
             }
 
-            ParserNode::FuncDecl { ident, args:_, block, size, ntype:_ } => {
+            ParserNode::FuncDecl { ident, args:_, block, ntype:_ } => {
                 self.emit(Instruction::Label(ident.to_string()));
-                let begin_index = self.instructions.len();
-                self.emit(Instruction::BeginFunc(*size));
+                let frame = self.frames.get(ident.to_string().as_str()).unwrap();
+                self.emit(Instruction::BeginFunc(frame.locals_size));
 
-                let prev_count = self.temp_count;
                 self.cgen(block);
                 self.emit(Instruction::EndFunc);
-                let curr_count = self.temp_count; 
-                if let Instruction::BeginFunc(ref mut s) = self.instructions[begin_index] {
-                    *s += (curr_count - prev_count) * 4;
-                } else {
-                    panic!("instruction is not BeginFunc")
-                }
-
                 Operand::None
             },
 
