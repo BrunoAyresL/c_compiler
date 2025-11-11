@@ -1,15 +1,21 @@
 use std::{fs};
-use crate::{analyzer::new_analyzer, irgen::new_codegen, parser::new_parser};
+use crate::{allocation::new_allocator, analyzer::new_analyzer, irgen::new_codegen, parser::new_parser};
 
-pub mod lexer;
-pub mod parser;
-pub mod token;
-pub mod node;
-pub mod analyzer;
 pub mod error;
-pub mod irgen;
-pub mod instruction;
+
+pub mod token;
+pub mod lexer;
+
+pub mod node;
+pub mod parser;
+
 pub mod frame;
+pub mod analyzer;
+
+pub mod instruction;
+pub mod irgen;
+
+pub mod allocation;
 
 fn main() {
     println!("\n-Start-");
@@ -42,7 +48,15 @@ fn main() {
     let mut code_gen = new_codegen(analyzer.function_frames);
     code_gen.cgen(&program_node);
     fs::write("tac.txt", code_gen.print_instructions()).expect("write file failed");
-    
+
+    let instructions = code_gen.instructions;
+    let frames = code_gen.frames;
+    let mut allocator = new_allocator(instructions, frames);
+    let lv = allocator.get_liveness();
+    for l in lv {
+        println!("{:?}\n", l)
+    }
+
     println!("-End-");
 }
 

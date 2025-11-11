@@ -8,7 +8,7 @@ use crate::irgen::Operand;
 
 
 
-
+#[derive(Clone)]
 pub enum Instruction {
 
     Label(String),
@@ -187,4 +187,49 @@ impl Instruction {
 
         }
     }
+
+
+    pub fn def(&self) -> Option<Operand> {
+        match self {
+            Instruction::Add { dest, .. } | Instruction::Sub { dest, .. } |
+            Instruction::Mul { dest, .. } | Instruction::Div { dest, .. } |
+            Instruction::ShiftLeft { dest, .. } | Instruction::ShiftRight { dest, .. } |
+            Instruction::Mod { dest, .. } | Instruction::BitwiseAnd { dest, .. } |
+            Instruction::BitwiseXor { dest, .. } | Instruction::BitwiseOr { dest, .. } |
+            Instruction::LogicalAnd { dest, .. } | Instruction::LogicalOr { dest, .. } |
+            Instruction::Equal { dest, .. } | Instruction::NotEqual { dest, .. } | 
+            Instruction::Greater { dest, .. } | Instruction::GreaterEqual { dest, .. } |
+            Instruction::Less { dest, .. } | Instruction::LessEqual { dest, .. } | 
+            Instruction::Assign { dest, .. } | Instruction::Complement { dest, .. } |
+            Instruction::Neg { dest, .. } | Instruction::Not { dest, .. } => {
+                Some(dest.clone())
+            },
+            _ => None,
+        }
+    }
+
+    pub fn uses(&self) -> Vec<Operand> {
+        match self {
+            Instruction::Add {arg1, arg2, ..} | Instruction::Sub {arg1, arg2, ..} |
+            Instruction::Mul {arg1, arg2, ..} | Instruction::Div {arg1, arg2, ..} |
+            Instruction::ShiftLeft {arg1, arg2, ..} | Instruction::ShiftRight {arg1, arg2, ..} |
+            Instruction::Mod {arg1, arg2, ..} | Instruction::BitwiseAnd {arg1, arg2, ..} |
+            Instruction::BitwiseXor {arg1, arg2, ..} | Instruction::BitwiseOr {arg1, arg2, ..} |
+            Instruction::LogicalAnd {arg1, arg2, ..} | Instruction::LogicalOr {arg1, arg2, ..} |
+            Instruction::Equal {arg1, arg2, ..} | Instruction::NotEqual {arg1, arg2, ..} | 
+            Instruction::Greater {arg1, arg2, ..} | Instruction::GreaterEqual {arg1, arg2, ..} |
+            Instruction::Less {arg1, arg2, ..} | Instruction::LessEqual {arg1, arg2, ..} => {
+                return vec![arg1.clone(), arg2.clone()];
+            },
+            Instruction::Assign { arg1, .. } | Instruction::Complement { arg1, .. } |
+            Instruction::Neg { arg1, .. } | Instruction::Not { arg1, .. } => {
+                return vec![arg1.clone()];  
+            },
+            Instruction::IfZero { cond, .. } => {
+                return vec![cond.clone()]
+            }          
+            _ => Vec::new(),
+        }
+    }
+
 }

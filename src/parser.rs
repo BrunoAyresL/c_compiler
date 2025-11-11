@@ -149,9 +149,9 @@ impl Parser {
     fn parse_func_args(&mut self) -> Result<Vec<ParserNode>, ParserError> {
         let mut args = Vec::new();
         while self.next_token != Token::CloseParenthesis {
-            let mut ntype = Type::Void;
+            let mut _ntype = Type::Void;
             if let Token::Type(t) = &self.next_token {
-                ntype = t.clone();
+                _ntype = t.clone();
                 self.read_token();
             } else {
                 return Err(ParserError::UnexpectedToken
@@ -159,7 +159,7 @@ impl Parser {
             }
             match &self.next_token {
                 Token::Ident(name) => {
-                    args.push(ParserNode::Var{ident: name.clone(), ntype}); 
+                    args.push(ParserNode::Var{ident: name.clone(), ntype: _ntype}); 
                     self.read_token();
                 },
                 _ => return Err(ParserError::InvalidToken { t:self.next_token.clone(), msg: String::from("parse_func_args") }),
@@ -542,7 +542,7 @@ mod tests {
             let got = collect_nodes(input);
             let output = got.to_string();
             assert_eq!(expected, output, "failed at: {}", input);
-            
+
         }
     }
 }

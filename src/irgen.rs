@@ -11,13 +11,12 @@
 
 use std::collections::HashMap;
 
-use rand::seq::index;
 
 use crate::{frame::Frame, instruction::Instruction, node::{ConstValue, ParserNode}};
 
 pub struct CodeGen {
-    instructions: Vec<Instruction>,
-    frames: HashMap<String, Frame>,
+    pub instructions: Vec<Instruction>,
+    pub frames: HashMap<String, Frame>,
     temp_count: usize,
     label_count: usize,
 }
@@ -31,7 +30,7 @@ pub fn new_codegen(frames: HashMap<String, Frame>) -> CodeGen {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Operand {
     Const(ConstValue),
     Var(String),
