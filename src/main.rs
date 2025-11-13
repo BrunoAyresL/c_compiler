@@ -1,21 +1,15 @@
 use std::{fs};
-use crate::{allocation::new_allocator, analyzer::new_analyzer, irgen::new_codegen, parser::new_parser};
+use crate::{
+    codegen::allocation::new_allocator, 
+    intermediate::analyzer::new_analyzer,
+    intermediate::irgen::new_codegen, 
+    parser::parser::new_parser
+};
 
-pub mod error;
+mod parser;
+mod intermediate;
+mod codegen;
 
-pub mod token;
-pub mod lexer;
-
-pub mod node;
-pub mod parser;
-
-pub mod frame;
-pub mod analyzer;
-
-pub mod instruction;
-pub mod irgen;
-
-pub mod allocation;
 
 fn main() {
     println!("\n-Start-");
@@ -44,18 +38,22 @@ fn main() {
         _ => println!("analyzing done"),
         
     }
-
+    println!("generating TAC...");
     let mut code_gen = new_codegen(analyzer.function_frames);
     code_gen.cgen(&program_node);
     fs::write("tac.txt", code_gen.print_instructions()).expect("write file failed");
+    println!("TAC done");
 
     let instructions = code_gen.instructions;
     let frames = code_gen.frames;
+    println!("allocating...");
     let mut allocator = new_allocator(instructions, frames);
-    let lv = allocator.get_liveness();
-    for l in lv {
-        println!("{:?}\n", l)
-    }
+    allocator.get_liveness();    
+    allocator.allocate_registers();
+    //for l in allocator.live_ranges {
+        //println!("{:?}", l);
+    //}
+    println!("allocation done");
 
     println!("-End-");
 }

@@ -1,4 +1,4 @@
-use crate::{analyzer::{Symbol, SymbolKind}, token::Type};
+use crate::{intermediate::analyzer::{Symbol, SymbolKind}, parser::token::Type};
 
 #[derive(Debug)]
 pub struct Frame {

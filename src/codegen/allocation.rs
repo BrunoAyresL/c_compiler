@@ -2,15 +2,15 @@
 // Interference
 // Node, Edge
 
-use std::collections::HashMap;
+use std::{collections::HashMap, vec};
 
-use crate::{frame::Frame, instruction::{Instruction}, irgen::Operand};
+use crate::{intermediate::frame::Frame, intermediate::instruction::{Instruction}, intermediate::irgen::Operand};
 
 
 pub struct Allocator {
     instructions: Vec<Instruction>,
     frames: HashMap<String, Frame>,
-    live_ranges: Vec<LiveRange>,
+    pub live_ranges: Vec<LiveRange>, // MUDAR
 }
 
 pub fn new_allocator(instructions: Vec<Instruction>, frames: HashMap<String, Frame>) -> Allocator {
@@ -25,11 +25,17 @@ pub struct LiveRange {
     name: String,
     live_in: usize,
     live_out: usize,
+    pub register_id: usize,
+}
+
+impl LiveRange {
+    pub fn check_interference(&self, other: &LiveRange) -> bool {
+        self.live_in <= other.live_in && self.live_out > other.live_in ||
+        self.live_in >= other.live_in && self.live_in < other.live_out
+    }
 }
 
 pub struct LiveNow {
-    live_ranges: Vec<LiveRange>,
-    
 }
 
 impl Allocator {
@@ -67,6 +73,7 @@ impl Allocator {
                         name: s, 
                         live_in: curr_pos, 
                         live_out,
+                        register_id: 0,
                     });
                 }
 
@@ -87,7 +94,34 @@ impl Allocator {
         
     }
 
-    pub fn allocate_registers() {
+    pub fn allocate_registers(&mut self) {
+        // graph
+        let mut lv_table : Vec<Vec<usize>> = vec![vec![]; self.live_ranges.len()];
+
+        for (i, lr1) in self.live_ranges.iter().enumerate() {
+            for (ii, lr2) in self.live_ranges.iter().enumerate() {
+                if i == ii { continue; }
+                if lr1.check_interference(lr2) {
+                    lv_table[i].push(ii);
+                }
+            }
+        }
+        // coloring
+
+        for (i, edges) in lv_table.iter().enumerate() {
+            let mut reg = 0;
+            let mut used_regs = Vec::new();
+            for ii in edges {
+                let nb = &self.live_ranges[*ii];
+                used_regs.push(nb.register_id);
+                if nb.register_id == reg {
+                    while used_regs.contains(&reg) {
+                        reg += 1;
+                    }
+                }
+            }
+            self.live_ranges[i].register_id = reg;
+        }
 
     }
 }

@@ -1,8 +1,8 @@
 use core::fmt;
 
-use crate::lexer::{new_lexer, Lexer};
-use crate::token::{Token, Type};
-use crate::node::{ParserNode};
+use crate::parser::lexer::{new_lexer, Lexer};
+use crate::parser::token::{Token, Type};
+use crate::parser::node::{ParserNode};
 pub struct Parser {
     lexer: Lexer,
     next_token: Token,
@@ -25,17 +25,17 @@ pub fn new_parser(input: &str) -> Result<Parser, ParserError> {
 pub enum ParserError {
     InvalidInput,
     InvalidToken {t: Token, msg: String},
-    UnexpectedToken {expected: Token, found: Token, pos: usize},
+    UnexpectedToken {expected: Token, found: Token, pos: usize, line: usize},
 
 }
 
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParserError::InvalidToken {t, msg} => write!(f, "ParserError: invalid token '{:?}' found at {}", t, msg),
+            ParserError::InvalidToken {t, msg} => write!(f, "ParserError: invalid token '{:?}' found at {}:", t, msg),
             ParserError::InvalidInput => write!(f, "ParserError: string input is invalid"),
-            ParserError::UnexpectedToken { expected, found, pos } 
-                => write!(f, "ParserError: expected '{:?}', found '{:?}' at {}", expected, found, pos),
+            ParserError::UnexpectedToken { expected, found, pos, line    } 
+                => write!(f, "ParserError: expected '{:?}', found '{:?}' at {}:{}", expected, found, line, pos),
  
         }
     }
@@ -60,6 +60,8 @@ impl Parser {
     fn parse_stmt(&mut self) -> Result<ParserNode, ParserError> {
         match self.next_token {
             Token::If => self.parse_if(),
+            Token::For => self.parse_for(),
+            Token::While => self.parse_while(),
             Token::Return => self.parse_return(),
             Token::Type(t) => {
                 self.read_token();
@@ -72,7 +74,7 @@ impl Parser {
                         ident.push_str(name);
                     }
                     _ => return Err(ParserError::UnexpectedToken
-                        { expected: Token::Ident(String::new()), found:self.next_token.clone(), pos: self.lexer.curr})
+                        { expected: Token::Ident(String::new()), found:self.next_token.clone(), line: self.lexer.line, pos: self.lexer.column})
                 }
 
                 self.read_token();
@@ -80,20 +82,45 @@ impl Parser {
                     Token::Assign | Token::Semicolon => self.parse_var_decl(ident, t.clone()),
                     Token::OpenParenthesis => self.parse_func_decl(ident, t.clone()),
                     _ => return Err(ParserError::UnexpectedToken
-                        { expected: Token::OpenParenthesis, found:self.next_token.clone(), pos: self.lexer.curr})
+                        { expected: Token::OpenParenthesis, found:self.next_token.clone(), line: self.lexer.line, pos: self.lexer.column})
                 }
                 
             },
             Token::OpenBracket => self.parse_block(),
             _ => {
-                 let n = self.parse_expression()?;
-                 if self.next_token == Token::Semicolon {
+                let n = self.parse_expression()?;
+                if self.next_token == Token::Semicolon {
                     self.read_token();
-                 }
-                 Ok(n)
-             } ,
+                }
+                Ok(n)
+             },
         }
     }
+
+    fn parse_for(&mut self) -> Result<ParserNode, ParserError> {
+        self.read_token();
+        self.expect(Token::OpenParenthesis)?;
+        let exp1 = self.parse_stmt()?;
+        let exp2 = self.parse_logical_or()?;
+        self.expect(Token::Semicolon)?;
+        let exp3 = self.parse_stmt()?;
+        self.expect(Token::CloseParenthesis)?;
+        self.expect(Token::OpenBracket)?;
+        let block: ParserNode = self.parse_block()?;
+        Ok(ParserNode::For { exp1: Box::from(exp1), exp2: Box::from(exp2), exp3: Box::from(exp3), block: Box::from(block) })
+    }
+
+    fn parse_while(&mut self) -> Result<ParserNode, ParserError> {
+        self.read_token();
+        self.expect(Token::OpenParenthesis)?;
+        let cond = self.parse_logical_or()?;
+        self.expect(Token::CloseParenthesis)?;
+        self.expect(Token::OpenBracket)?;
+        let block = self.parse_block()?;
+        Ok(ParserNode::While { cond: Box::from(cond), block: Box::from(block) })
+    }
+
+
     fn parse_if(&mut self) -> Result<ParserNode, ParserError> {
         self.read_token();
         self.expect(Token::OpenParenthesis)?;
@@ -111,7 +138,7 @@ impl Parser {
     fn parse_else(&mut self) -> Result<ParserNode, ParserError> {
         if self.next_token != Token::If && self.next_token != Token::OpenBracket {
             return Err(ParserError::UnexpectedToken
-                { expected:Token::OpenBracket, found: self.next_token.clone(), pos: self.lexer.curr});
+                { expected:Token::OpenBracket, found: self.next_token.clone(), line: self.lexer.line, pos: self.lexer.column});
         }
         if self.next_token == Token::OpenBracket {
             self.read_token();
@@ -130,7 +157,7 @@ impl Parser {
         if self.next_token == Token::Assign {
             self.read_token();
             let exp = self.parse_logical_or()?;
-            self.expect(Token::Semicolon)?;
+            self.read_token();
             Ok(ParserNode::Declare { ident: ident_node, exp: Some(Box::from(exp)), ntype: t })
         } else {
             self.expect(Token::Semicolon)?;
@@ -155,7 +182,7 @@ impl Parser {
                 self.read_token();
             } else {
                 return Err(ParserError::UnexpectedToken
-                    { expected: Token::Type(Type::Void), found: self.next_token.clone(), pos: self.lexer.curr })
+                    { expected: Token::Type(Type::Void), found: self.next_token.clone(), line: self.lexer.line, pos: self.lexer.column })
             }
             match &self.next_token {
                 Token::Ident(name) => {
@@ -190,7 +217,10 @@ impl Parser {
             Token::Assign => {
                 self.read_token();
                 let b = self.parse_logical_or()?;
-                self.expect(Token::Semicolon)?;
+                if let Token::CloseParenthesis = self.next_token {
+                } else {
+                    self.expect(Token::Semicolon)?;
+                }
                 a = ParserNode::Assign { 
                     left: Box::from(a), right: Box::from(b), 
                 };
@@ -481,7 +511,7 @@ impl Parser {
             self.read_token();
             Ok(tok)
         } else {
-            Err(ParserError::UnexpectedToken{expected: t, found: tok, pos: self.lexer.curr})
+            Err(ParserError::UnexpectedToken{expected: t, found: tok, line: self.lexer.line, pos: self.lexer.column})
         }
     }
 }

@@ -1,4 +1,4 @@
-use crate::node::ConstValue;
+use crate::parser::node::ConstValue;
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 
@@ -42,6 +42,8 @@ pub enum Token {
     Else,
     Return,
     Assign,
+    For,
+    While,
     
     // condition 
     LogicalAnd,

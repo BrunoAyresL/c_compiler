@@ -1,4 +1,4 @@
-use crate::irgen::Operand;
+use crate::intermediate::irgen::Operand;
 
 // todo:
 // declare

@@ -1,4 +1,4 @@
-use crate::token::Type;
+use crate::parser::token::Type;
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum ConstValue {
@@ -33,6 +33,9 @@ pub enum ParserNode {
     Assign {left: Box<ParserNode>, right: Box<ParserNode>},
     If {cond: Box<ParserNode>, block: Box<ParserNode>, else_stmt: Option<Box<ParserNode>> },
     Return {exp: Box<ParserNode>},
+    For {exp1: Box<ParserNode>, exp2: Box<ParserNode>, exp3: Box<ParserNode>, block: Box<ParserNode>},
+    While {cond: Box<ParserNode>, block: Box<ParserNode>},
+
 
     // expreession
     Expression (Vec<ParserNode>),
@@ -141,7 +144,13 @@ impl ParserNode {
                 }
                 s
             }
-            
+            ParserNode::For { exp1, exp2, exp3, block } => {
+                format!("for ({};{};{}) {{\n{} }}", exp1.to_string(), exp2.to_string(), exp3.to_string(), block.to_string())
+            }
+            ParserNode::While { cond, block } => {
+                format!("while ({}) {{\n{} }}", cond.to_string(), block.to_string())
+            }
+
             ParserNode::Return { exp } => {
                 format!("return {};\n", exp.to_string())
             }

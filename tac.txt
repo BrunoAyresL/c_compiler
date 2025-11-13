@@ -1,60 +1,138 @@
 func:
-   BeginFunc 4
-   t0 = a / b
-   t1 = t0 + 2
-   z = t1
-   t2 = z - 1
-   Return t2
+   BeginFunc 52
+   t0 = a + b
+   x = t0
+   t1 = b + c
+   y = t1
+   t2 = c + d
+   z = t2
+   t3 = x + y
+   w = t3
+   t4 = y + z
+   u = t4
+   t5 = w + u
+   v = t5
+   t6 = x + z
+   t = t6
+   t7 = t + v
+   r = t7
+   t8 = r + y
+   s = t8
+   t9 = s + u
+   q = t9
+   t10 = q + x
+   p = t10
+   t11 = q + x
+   t12 = p == t11
+   IfZero t12 Goto L1
+   t13 = x + b
+   t14 = t13 < 8
+   IfZero t14 Goto L3
+   t15 = a + b
+   t16 = t15 + q
+   t17 = t16 + s
+   aa = t17
+   t18 = p > 1
+   IfZero t18 Goto L5
+   Return x
+   Goto L4
+L5:
+   t19 = x - y
+   xx = t19
+L4:
+   Goto L2
+L3:
+   t20 = -2
+   r = t20
+L2:
+   Goto L0
+L1:
+   t21 = r > 0
+   IfZero t21 Goto L7
+   Return w
+   Goto L6
+L7:
+   s = 0
+L6:
+L0:
+   Return p
    EndFunc
 main:
-   BeginFunc 24
+   BeginFunc 32
    x = 0
    y = 10
    s = 25
+   t22 = x < 0
+   IfZero t22 Goto L8
+L9:
+   l = 25
+   t23 = l + x
+   t24 = t23 + 2
+   l = t24
+   t25 = x + 1
+   x = t25
+   IfZero t22 Goto L8
+   Goto L9
+L8:
    c = 'h'
    d = 'i'
-   t3 = c == d
-   IfZero t3 Goto L0
+   t26 = c == d
+   IfZero t26 Goto L10
    x = 1
-   t4 = c == d
-   IfZero t4 Goto L1
+   t27 = c == d
+   IfZero t27 Goto L11
    x = 2
-   t5 = c == d
-   IfZero t5 Goto L2
+   t28 = c == d
+   IfZero t28 Goto L12
    x = 3
-   t6 = c == d
-   IfZero t6 Goto L3
+   t29 = c == d
+   IfZero t29 Goto L13
    x = 4
-L3:
-L2:
-L1:
-L0:
-   t7 = 5 / 3
-   t8 = x + t7
-   IfZero t8 Goto L5
-   t9 = y + 2
-   y = t9
-   t10 = y * 5
-   x = t10
+L13:
+L12:
+L11:
+L10:
+   i = 0
+   t30 = i < 20
+   IfZero t30 Goto L14
+L15:
+   t31 = x + 2
+   x = t31
+   t32 = i + 1
+   i = t32
+   IfZero t30 Goto L14
+   Goto L15
+L14:
+   t33 = 5 / 3
+   t34 = x + t33
+   IfZero t34 Goto L17
+   t35 = y + 2
+   y = t35
+   t36 = y * 5
+   x = t36
    s = 200
-   Goto L4
-L5:
-   t11 = y < 2
-   IfZero t11 Goto L7
-   t12 = 10000 % y
-   t13 = t12 << s
-   x = t13
-   Goto L6
-L7:
+   Goto L16
+L17:
+   t37 = y < 2
+   IfZero t37 Goto L19
+   t38 = 10000 % y
+   t39 = t38 << s
+   x = t39
+   Goto L18
+L19:
    y = 999
-   t14 = x + y
-   h = t14
-L6:
-L4:
-   t15 = x - 2
-   PushParam t15
-   t16 = 2
-   PushParam t16
+   t40 = x + y
+   h = t40
+L18:
+L16:
+   t41 = x - 2
+   PushParam t41
+   t42 = 2
+   PushParam t42
+   t43 = 18
+   PushParam t43
+   t44 = 1
+   PushParam t44
    LCall func
-   PopParams 8
+   PopParams 16
    EndFunc

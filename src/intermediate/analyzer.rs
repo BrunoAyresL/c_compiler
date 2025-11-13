@@ -1,8 +1,8 @@
 use core::fmt;
 use std::{collections::HashMap};
-use crate::frame::{Frame, new_frame};
-use crate::node::{ConstValue, ParserNode};
-use crate::token::Type;
+use crate::intermediate::frame::{Frame, new_frame};
+use crate::parser::node::{ConstValue, ParserNode};
+use crate::parser::token::Type;
 
 pub struct SemanticAnalyzer {
     symbol_table: Vec<HashMap<String, Symbol>>,
@@ -44,8 +44,10 @@ impl fmt::Display for AnalyzerError {
                 => write!(f, "AnalyzerError: type mismatch: '{}' and '{}' found at {}", type1.to_string(), type2.to_string(), last_func.to_string()),
             AnalyzerError::InvalidNode(s) | AnalyzerError::ScopeError(s)  
                 => write!(f, "AnalyzerError: {}", s),
-            _ => write!(f, "unknown error"),
- 
+            AnalyzerError::InvalidArguments(s)
+                => write!(f, "AnalyzerError: {}", s),
+            AnalyzerError::AlreadyDeclared(s)
+                => write!(f, "AnalyzerError: {}", s),
         }
     }
 }
@@ -84,11 +86,12 @@ impl SemanticAnalyzer {
                 if self.scope_count != 0 { self.scope_count -= 1}
             },
             ParserNode::FuncDecl { ident, args, block, ntype} => {
+                
+                let name = self.get_ident(ident)?;
                 if self.scope_count != 0 {
-                    return Err(AnalyzerError::InvalidNode("function declaration inside block".to_string()))
+                    return Err(AnalyzerError::InvalidNode(format!("'{}' decl inside block", name)))
                 }
 
-                let name = self.get_ident(ident)?;
 
                 if self.current_frame.is_some() {
                     let frame = self.current_frame.take().unwrap();
@@ -96,16 +99,15 @@ impl SemanticAnalyzer {
                 }
 
                 self.current_frame = Some(new_frame(name.clone()));
+                self.declare_function(&name, args.len(), ntype.clone())?;
+                self.new_scope();
 
-                let args_size = args.len();
                 for arg in args {
                     if let ParserNode::Var { ident, ntype } = arg {
                         self.declare_param(ident, true, *ntype)?;
                     }
                 }
 
-                self.declare_function(&name, args_size, ntype.clone())?;
-                self.new_scope();
                 self.analyze_node(block)?;
             },
             ParserNode::Declare { ident, exp, ntype } => {
@@ -139,14 +141,31 @@ impl SemanticAnalyzer {
                 self.expect_type(type1, type2)?;
                 return Ok(type1);
             },
+            ParserNode::For { exp1, exp2, exp3, block } => {
+                self.analyze_node(exp1)?;
+                self.analyze_node(exp2)?;
+                self.analyze_node(exp3)?;
+                self.new_scope();
+                self.analyze_node(block)?;
+            },
+            ParserNode::While { cond, block } => {
+                self.analyze_node(cond)?;
+                self.new_scope();
+                self.analyze_node(block)?;
+            }
+
             ParserNode::If { cond, block , else_stmt} => {
                 self.analyze_node(cond)?;
                 self.new_scope();
                 self.analyze_node(block)?;
                 match else_stmt {
                     Some(n) => {
-                        self.new_scope();
-                        self.analyze_node(n)?;
+                        if let ParserNode::If { .. } = **n {
+                            self.analyze_node(n)?;
+                        } else {
+                            self.new_scope();
+                            self.analyze_node(n)?;  
+                        }
                     },
                     None => (),
                 }
@@ -226,7 +245,7 @@ impl SemanticAnalyzer {
 
     fn declare_variable(&mut self, name: &String, initialized: bool, ntype: Type) -> Result<(), AnalyzerError> {
         if self.is_declared(name)? {
-            return Err(AnalyzerError::AlreadyDeclared("variable already exists".into()));
+            return Err(AnalyzerError::AlreadyDeclared(format!("'{}' already exists.", name)));
         }
         let scope = self.scope_count;
         if let Some(frame) = &mut self.current_frame {
@@ -388,7 +407,7 @@ impl SemanticAnalyzer {
 
 #[cfg(test)]
 mod tests {
-    use crate::{parser::{new_parser}};
+    use crate::parser::parser::new_parser;
 
     use super::*;
 

@@ -1,9 +1,11 @@
 use core::fmt;
-use crate::{node::ConstValue, token::{Token, Type}};
+use crate::{parser::node::ConstValue, parser::token::{Token, Type}};
 
 pub struct Lexer {
     input: String,
-    pub curr: usize,
+     curr: usize,
+    pub line: usize,
+    pub column: usize,
     ch: u8,
 
 }
@@ -27,6 +29,8 @@ pub fn new_lexer(input: &str) -> Lexer {
     Lexer {
         input: String::from(input),
         curr: 0,
+        line: 1,
+        column: 0,
         ch: input.as_bytes()[0],
     }
 }
@@ -42,11 +46,13 @@ impl Lexer {
 
     fn read_char(&mut self) {
         self.curr += 1;
+        self.column += 1;
         if self.curr >= self.input.len() {
             self.ch = 0;
         } else {
             self.ch = self.input.as_bytes()[self.curr];
         }
+        
     }
 
     fn read_int(&mut self) -> Result<i32, LexerError> {
@@ -73,6 +79,10 @@ impl Lexer {
 
     pub fn next_token(&mut self) -> Result<Token, LexerError> {
         while self.ch == b' ' || self.ch == b'\n' || self.ch == b'\r' {
+            if self.ch == b'\n' { 
+                self.line += 1; 
+                self.column = 0;
+            }
             self.read_char();
         }
 
@@ -165,6 +175,8 @@ impl Lexer {
                     "return" => Token::Return,
                     "if" => Token::If,
                     "else" => Token::Else,
+                    "for" => Token::For,
+                    "while" => Token::While,
                     _ => Token::Ident(ident),
                 });
             },
@@ -174,7 +186,6 @@ impl Lexer {
             0 => Token::EoF,
             _ => return Err(LexerError::InvalidChar(self.ch as char, self.curr)),
         };
-
         self.read_char();
         return Ok(tok)
     }

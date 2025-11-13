@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 
-use crate::{frame::Frame, instruction::Instruction, node::{ConstValue, ParserNode}};
+use crate::{intermediate::frame::Frame, intermediate::instruction::Instruction, parser::node::{ConstValue, ParserNode}};
 
 pub struct CodeGen {
     pub instructions: Vec<Instruction>,
@@ -143,6 +143,33 @@ impl CodeGen {
                 } 
                 Operand::None
             },
+            ParserNode::For { exp1, exp2, exp3, block } => {
+                self.cgen(exp1);
+                let exp2 = self.cgen(exp2);
+                let end_label = self.new_label();
+                self.emit(Instruction::IfZero { cond: exp2.clone(), label: end_label.clone() });
+                let loop_label = self.new_label();
+                self.emit(Instruction::Label(loop_label.clone()));
+                self.cgen(block);
+                self.cgen(exp3);
+                self.emit(Instruction::IfZero { cond: exp2, label: end_label.clone() });
+                self.emit(Instruction::Goto(loop_label));
+                self.emit(Instruction::Label(end_label));
+                Operand::None
+            },
+            ParserNode::While { cond, block } => {
+                let cond = self.cgen(cond);
+                let end_label = self.new_label();
+                self.emit(Instruction::IfZero { cond: cond.clone(), label: end_label.clone() });
+                let loop_label = self.new_label();
+                self.emit(Instruction::Label(loop_label.clone()));
+                self.cgen(block);
+                self.emit(Instruction::IfZero { cond: cond, label: end_label.clone() });
+                self.emit(Instruction::Goto(loop_label));
+                self.emit(Instruction::Label(end_label));
+                Operand::None
+            },
+
             ParserNode::Return { exp } => {
                 let mut dest = self.cgen(exp);
                 match dest {
