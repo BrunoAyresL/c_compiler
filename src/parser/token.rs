@@ -83,12 +83,7 @@ pub enum Token {
     CloseBracket,
     OpenParenthesis,
     CloseParenthesis,
-    OpenSquareBracket,
-    CloseSquareBracket,
     Comma,
-    SingleQuote,
-    DoubleQuote,
-    
     EoF,
     Invalid
     

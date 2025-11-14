@@ -8,7 +8,7 @@ use crate::intermediate::irgen::Operand;
 
 
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
 
     Label(String),

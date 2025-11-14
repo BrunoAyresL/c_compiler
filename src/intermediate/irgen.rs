@@ -30,7 +30,7 @@ pub fn new_codegen(frames: HashMap<String, Frame>) -> CodeGen {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Operand {
     Const(ConstValue),
     Var(String),
@@ -124,21 +124,44 @@ impl CodeGen {
                 match else_stmt {
                     Some(n) => {
                         let cond = self.cgen(cond);
-                        let end_label = self.new_label();
                         let else_label = self.new_label();
+                        let mut end_label = self.new_label();
                         self.emit(Instruction::IfZero { cond, label: else_label.clone() });
                         self.cgen(&block);
+                        let goto_index = self.instructions.len();
                         self.emit(Instruction::Goto(end_label.clone()));
                         self.emit(Instruction::Label(else_label));
                         self.cgen(&n);
-                        self.emit(Instruction::Label(end_label));
+                        if let Instruction::Label(l) = self.instructions.last().unwrap() {
+                            let prev_label = l.clone();
+                            if let Instruction::Goto(goto_label) = &mut self.instructions[goto_index] {
+                                *goto_label = prev_label.clone();
+                                self.label_count -= 1;
+                                end_label = prev_label;
+                                self.emit(Instruction::Goto(end_label.clone()));
+                            }
+                        } else {
+                            self.emit(Instruction::Goto(end_label.clone()));
+                            self.emit(Instruction::Label(end_label));
+                        }
+    
                     },
                     None => {
                         let cond = self.cgen(cond);
                         let end_label = self.new_label();
+                        let if_index = self.instructions.len();
                         self.emit(Instruction::IfZero { cond, label: end_label.clone() });
                         self.cgen(&block);
-                        self.emit(Instruction::Label(end_label));
+                        if let Instruction::Label(l) = self.instructions.last().unwrap() {
+                            let prev_label = l.clone();
+                            if let Instruction::IfZero { label , ..} = &mut self.instructions[if_index] {
+                                *label = prev_label;
+                                self.label_count -= 1;
+                            }
+                        } else {
+                            self.emit(Instruction::Label(end_label));
+                        }
+                        
                     }
                 } 
                 Operand::None
@@ -358,10 +381,10 @@ impl CodeGen {
                 }
                 Operand::None
             },
-            _ => {
+            /* _ => {
                 println!("NOT IMPLEMENTED: {:?}", node);
                 Operand::None
-            },
+            }, */
         }
     }
 

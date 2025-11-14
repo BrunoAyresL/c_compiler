@@ -88,15 +88,15 @@ pub enum ParserNode {
     Var{ ident: String, ntype: Type},
     Const(ConstValue),
     SubExp {val: Box<ParserNode>},
-
-    // other
-    Invalid(String),
-
 }
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+pub static NODE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 impl ParserNode {
 
     pub fn to_string(&self) -> String {
+        NODE_COUNT.fetch_add(1, Ordering::Relaxed);
         match self {
             // block
             ParserNode::Block(stmts) => {
@@ -261,10 +261,6 @@ impl ParserNode {
                 format!("({})", val.to_string())
             }
 
-            // other (debug)
-            ParserNode::Invalid(s) => {
-                format!("\n---------- {} ----------\n", s.to_string())
-            }
         }
     }
 }
