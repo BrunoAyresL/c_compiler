@@ -1,6 +1,6 @@
 use crate::{intermediate::analyzer::{Symbol, SymbolKind}, parser::token::Type};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Frame {
     pub name: String,
     params: Vec<Symbol>,

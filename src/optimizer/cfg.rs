@@ -1,7 +1,21 @@
 use core::fmt;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::intermediate::{cfg, frame::Frame, instruction::Instruction};
+use crate::intermediate::{frame::Frame, instruction::Instruction};
+
+enum TACError {
+    UnexpectedInstruction { expected: String, found: String }
+}
+
+impl fmt::Display for TACError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TACError::UnexpectedInstruction{expected, found}
+            => write!(f, "TACError: expected '{}' found  '{}'", expected, found),
+        }
+    }
+}
+
 
 #[derive(Debug)]
 pub struct ControlFlowGraph {
@@ -10,21 +24,39 @@ pub struct ControlFlowGraph {
 
 #[derive(Debug, Clone)]
 pub struct Block {
-    id: usize,
+    pub id: usize,
     label: Option<String>,
     first: usize, // BeginFunc, Label, after Ifzero, Return, Call, etc
     last: usize, // Ifzero, Goto, Return, EndFunc
-    edges: Vec<usize>,
+    pub edges: Vec<usize>,
+
+    pub live_in: HashSet<String>,
+    pub live_out: HashSet<String>,
+    pub def_set: HashSet<String>,
+    pub use_set: HashSet<String>,
 }
 
 impl fmt::Display for Block {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({})\t{}-{}\t ->\t{:?}\t{}", self.id, 
-        self.first, 
-        self.last, 
-        self.edges,
-        self.label.as_deref().unwrap_or("")
+        let id_string = format!("({})", self.id);
+        let range_string = format!("{}-{}", self.first, self.last);
+        let edges_string = format!("{:?}", self.edges);
+        let label_string = self.label.as_deref().unwrap_or("-");
+        write!(f, "{:^9} {:^9} ->  {:^9}  {:^7} |  IN {:<4?} OUT {:<4?} DEF {:<4?} USE {:<4?}", 
+        id_string, 
+        range_string,
+        edges_string,
+        label_string,
+        self.live_in,
+        self.live_out,
+        self.def_set,
+        self.use_set,
         )
+    }
+}
+impl Block {
+    pub fn get_range(&self) -> (usize, usize) {
+        (self.first, self.last)
     }
 }
 
@@ -69,7 +101,12 @@ impl CFGBuilder {
             first: self.start,
             last: self.curr,
             edges: Vec::new(),
+            live_in: HashSet::new(),
+            live_out: HashSet::new(),
+            def_set: HashSet::new(),
+            use_set: HashSet::new()
         };
+
         self.count += 1;
         
         if self.start < self.instructions.len() {
@@ -79,14 +116,21 @@ impl CFGBuilder {
         self.blocks.push(block);
     }
     fn check_instruction(&mut self) -> bool {
+        let start = self.start;
+        let curr = self.curr;
         match self.curr_instruction() {
             Instruction::BeginFunc(_) => {
-                self.start = self.curr + 1;
+                self.start = self.curr;
                 
             },
             Instruction::Label(l) => {
-                self.label = Some(l.clone());
-                self.start = self.curr + 1;
+                if start < curr {
+                    self.curr -= 1;
+                    self.build_block();
+                } else {
+                    self.label = Some(l.clone());
+                    self.start = self.curr;
+                }
             },
             Instruction::IfZero { .. } | Instruction::Goto(..) => {
                 self.build_block();
@@ -107,16 +151,21 @@ impl CFGBuilder {
         return &self.blocks;
     }
 
-    fn get_next_block_id(&self, label: &String) -> usize {
-        (self.blocks
+    fn get_next_block_id(&self, label: &String) -> Result<usize, TACError> {
+        let found= self.blocks
         .iter()
         .find(|b| b.label.clone()
-        .is_some_and(|l| l == *label)))
-        .expect(format!("ERROR - label '{}' not found", label).as_str())
-        .id
+        .is_some_and(|l| l == *label));
+        match found {
+            Some(block) => Ok(block.id),
+            None => Err(TACError::UnexpectedInstruction { 
+                expected: label.clone(), 
+                found: String::from("None") 
+            } )
+        }
     }
     
-    fn link_block_edges(&mut self) {
+    fn link_block_edges(&mut self) -> Result<(), TACError>{
         for i in   0..self.blocks.len() {
             let mut edges = Vec::new();
             let block_last = self.blocks[i].last;
@@ -124,27 +173,40 @@ impl CFGBuilder {
 
             match last_instruction {
                 Instruction::IfZero { label, .. } => {
-                    let next_id = self.get_next_block_id(label);
-                    edges.push(next_id);
-                    if self.blocks[i].id < self.count + 1{
+                    if self.blocks[i].id < self.count + 1 {
                         let next_id = self.blocks[i].id + 1;
                         edges.push(next_id);
                     }
+                    let next_id = self.get_next_block_id(label)?;
+                    edges.push(next_id);
+                    
                 }, 
                 Instruction::Goto(label) => {
-                    let next_id = self.get_next_block_id(label);
+                    let next_id = self.get_next_block_id(label)?;
                     edges.push(next_id);
                 },
                 Instruction::EndFunc => {
 
                 }
-                _ => panic!("link_block_edges: unexpected {:?}", last_instruction),
+                _ => {
+                    if self.blocks[i].id < self.count + 1 {
+                        let next_id = self.blocks[i].id + 1;
+                        edges.push(next_id);
+                    }
+                }
             }
             self.blocks[i].edges = edges;
         }
+        Ok(())
     }
     
     pub fn build(&mut self) -> ControlFlowGraph {
+        self.build_function_blocks();
+        match self.link_block_edges() {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e)
+        }
+        
         ControlFlowGraph { blocks: self.blocks.clone() }
     }
 
@@ -158,7 +220,7 @@ pub fn create_cfgs(frames: &HashMap<String, Frame>, instructions: &Vec<Instructi
         let mut end = 0;
         for (i, inst) in instructions.iter().enumerate() {
             if let Instruction::Label(l) = inst && *l == *frame_name {
-                start = i + 1;
+                start = i;
             } else if let Instruction::EndFunc = inst {
                 end = i;
             }
@@ -167,8 +229,6 @@ pub fn create_cfgs(frames: &HashMap<String, Frame>, instructions: &Vec<Instructi
         
         let mut cfg_builder = new_cfg_builder(frame_name.clone(), 
             instructions[start..=end].to_vec());
-        cfg_builder.build_function_blocks();
-        cfg_builder.link_block_edges();
         cfgs.push(cfg_builder.build());
     }
     return cfgs;

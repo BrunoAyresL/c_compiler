@@ -228,6 +228,9 @@ impl Instruction {
             Instruction::IfZero { cond, .. } => {
                 return vec![cond.clone()]
             }          
+            Instruction::Return { dest } => {
+                return vec![dest.clone()]
+            }
             _ => Vec::new(),
         }
     }

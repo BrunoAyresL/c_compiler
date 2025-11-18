@@ -1,13 +1,21 @@
-main:
-   BeginFunc 0
-   t0 = 1 > 0
+func:
+   BeginFunc 12
+   z = 10
+   x = 0
+   y = 1
+   t0 = x < n
    IfZero t0 Goto L0
-   t1 = 0
-   Return t1
+L1:
+   t1 = x * 2
+   t2 = t1 + y
+   z = t2
+   t3 = x + 1
+   x = t3
+   t4 = x + z
+   y = t4
+   t5 = x < n
+   IfZero t5 Goto L0
    Goto L1
 L0:
-   t2 = 1
-   Return t2
-   Goto L1
-L1:
+   Return y
    EndFunc

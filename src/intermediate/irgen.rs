@@ -1,18 +1,8 @@
-
-
-// array
-// load arr[index]
-// store arr[index]
-
-// array
-// type
-// size
-
-
 use std::collections::HashMap;
-
-
 use crate::{intermediate::frame::Frame, intermediate::instruction::Instruction, parser::node::{ConstValue, ParserNode}};
+
+static DEBUG_IR_GEN: bool = false;
+
 
 pub struct CodeGen {
     pub instructions: Vec<Instruction>,
@@ -37,6 +27,7 @@ pub enum Operand {
     Temp(String),
     None,
 }
+
 impl Operand {
     pub fn print(&self) -> String {
         match self {
@@ -56,7 +47,21 @@ impl Operand {
 
 
 impl CodeGen {
+
+    fn debug_print(&self, tac: &Instruction) {
+        if DEBUG_IR_GEN {
+            let tac_string = tac.print();
+            println!("DEBUG_IR_GEN: added {:<25} at {} | L: {}, T: {}", 
+            tac_string,
+            self.instructions.len(),
+            self.label_count,
+            self.temp_count,
+         )
+        }
+    }
+
     fn emit(&mut self, tac: Instruction) {
+        self.debug_print(&tac);
         self.instructions.push(tac);
     }
 
@@ -125,7 +130,7 @@ impl CodeGen {
                     Some(n) => {
                         let cond = self.cgen(cond);
                         let else_label = self.new_label();
-                        let mut end_label = self.new_label();
+                        let end_label = self.new_label();
                         self.emit(Instruction::IfZero { cond, label: else_label.clone() });
                         self.cgen(&block);
                         let goto_index = self.instructions.len();
@@ -136,9 +141,6 @@ impl CodeGen {
                             let prev_label = l.clone();
                             if let Instruction::Goto(goto_label) = &mut self.instructions[goto_index] {
                                 *goto_label = prev_label.clone();
-                                self.label_count -= 1;
-                                end_label = prev_label;
-                                self.emit(Instruction::Goto(end_label.clone()));
                             }
                         } else {
                             self.emit(Instruction::Goto(end_label.clone()));
@@ -156,7 +158,7 @@ impl CodeGen {
                             let prev_label = l.clone();
                             if let Instruction::IfZero { label , ..} = &mut self.instructions[if_index] {
                                 *label = prev_label;
-                                self.label_count -= 1;
+
                             }
                         } else {
                             self.emit(Instruction::Label(end_label));
@@ -168,26 +170,28 @@ impl CodeGen {
             },
             ParserNode::For { exp1, exp2, exp3, block } => {
                 self.cgen(exp1);
-                let exp2 = self.cgen(exp2);
+                let exp2_op = self.cgen(exp2);
                 let end_label = self.new_label();
-                self.emit(Instruction::IfZero { cond: exp2.clone(), label: end_label.clone() });
+                self.emit(Instruction::IfZero { cond: exp2_op.clone(), label: end_label.clone() });
                 let loop_label = self.new_label();
                 self.emit(Instruction::Label(loop_label.clone()));
                 self.cgen(block);
                 self.cgen(exp3);
-                self.emit(Instruction::IfZero { cond: exp2, label: end_label.clone() });
+                let exp2_op = self.cgen(exp2);
+                self.emit(Instruction::IfZero { cond: exp2_op, label: end_label.clone() });
                 self.emit(Instruction::Goto(loop_label));
                 self.emit(Instruction::Label(end_label));
                 Operand::None
             },
             ParserNode::While { cond, block } => {
-                let cond = self.cgen(cond);
+                let cond_op = self.cgen(cond);
                 let end_label = self.new_label();
-                self.emit(Instruction::IfZero { cond: cond.clone(), label: end_label.clone() });
+                self.emit(Instruction::IfZero { cond: cond_op.clone(), label: end_label.clone() });
                 let loop_label = self.new_label();
                 self.emit(Instruction::Label(loop_label.clone()));
                 self.cgen(block);
-                self.emit(Instruction::IfZero { cond: cond, label: end_label.clone() });
+                let cond_op = self.cgen(cond);
+                self.emit(Instruction::IfZero { cond: cond_op, label: end_label.clone() });
                 self.emit(Instruction::Goto(loop_label));
                 self.emit(Instruction::Label(end_label));
                 Operand::None

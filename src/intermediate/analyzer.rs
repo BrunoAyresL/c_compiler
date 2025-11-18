@@ -4,6 +4,8 @@ use crate::intermediate::frame::{Frame, new_frame};
 use crate::parser::node::{ConstValue, ParserNode};
 use crate::parser::token::Type;
 
+static DEBUG_ANALYZER: bool = false;
+
 pub struct SemanticAnalyzer {
     symbol_table: Vec<HashMap<String, Symbol>>,
     pub function_frames: HashMap<String, Frame>,
@@ -64,7 +66,6 @@ pub fn new_analyzer() -> SemanticAnalyzer {
 
 impl SemanticAnalyzer {
     pub fn analyze(&mut self, program_node: &mut ParserNode) -> Result<(), AnalyzerError> {
-        // self.print();
         self.analyze_node(program_node)?;
         if self.current_frame.is_some() {
             let frame = self.current_frame.take().unwrap();
@@ -98,6 +99,8 @@ impl SemanticAnalyzer {
                     self.function_frames.insert(frame.name.clone(), frame);
                 }
 
+                if DEBUG_ANALYZER { println!("DEBUG_ANALYZER: new function frame: {}", name.clone())}
+
                 self.current_frame = Some(new_frame(name.clone()));
                 self.declare_function(&name, args.len(), ntype.clone())?;
                 self.new_scope();
@@ -107,7 +110,6 @@ impl SemanticAnalyzer {
                         self.declare_param(ident, true, *ntype)?;
                     }
                 }
-
                 self.analyze_node(block)?;
             },
             ParserNode::Declare { ident, exp, ntype } => {
@@ -127,6 +129,7 @@ impl SemanticAnalyzer {
                     },
                     None => self.declare_variable(&name, false, *ntype)?,
                 }
+                self.debug_print();
                 return Ok(*ntype)
             },
             ParserNode::Assign { left, right } => {
@@ -233,12 +236,11 @@ impl SemanticAnalyzer {
             },
             ParserNode::Var {ident, ..} => {
                 self.is_initialized(&ident)?;
-                
                 return self.initialize_variable(ident);
             },
             
 
-            _ => return Err(AnalyzerError::InvalidNode("unknown node".to_string()))
+           /*  _ => return Err(AnalyzerError::InvalidNode("unknown node".to_string())) */
         }
         Ok(Type::Void)
     }
@@ -281,6 +283,7 @@ impl SemanticAnalyzer {
                 stype: ntype,
             },
         );
+        self.debug_print();
         Ok(())
     }
 
@@ -317,6 +320,7 @@ impl SemanticAnalyzer {
                 stype: ntype, },
                 
             );
+        self.debug_print();
         Ok(())
     }
 
@@ -367,9 +371,6 @@ impl SemanticAnalyzer {
         }   
     }
 
-    pub fn get_localvar_count(&self) -> Result<usize, AnalyzerError> {
-        Ok(self.symbol_table.last().iter().len())
-    }
 
     fn new_scope(&mut self) {
         self.scope_count += 1;
@@ -384,15 +385,26 @@ impl SemanticAnalyzer {
         }  
     }
 
-    pub fn print(&self) {
-        print!("Symbol Table:");
-        for (_, t) in self.symbol_table.iter().enumerate() {
-            print!("(");
-            for s in t.keys() {
-                print!(" {}", s);
+    fn debug_print(&self) {
+        if DEBUG_ANALYZER {
+            let mut symbol_table_string = String::new();
+            for t in self.symbol_table.iter() {
+                symbol_table_string.push('(');
+                for (i, s) in t.keys().into_iter().enumerate() {
+                    symbol_table_string.push_str(format!("{}, ", s).as_str());
+                    if i == t.len() - 1 {
+                        symbol_table_string.pop();
+                        symbol_table_string.pop();
+                    }
+                }
+                symbol_table_string.push_str(") ");
             }
-            print!(" )");
+            println!("DEBUG_ANALYZER:{:^10} - ST({}): {:<50}",
+            self.frame_string(),
+            self.symbol_table.len(),
+            symbol_table_string);
         }
+        
     }
 
     pub fn frame_string(&self) -> String {

@@ -1,6 +1,8 @@
 use core::fmt;
 use crate::{parser::node::ConstValue, parser::token::{Token, Type}};
 
+static DEBUG_LEXER: bool = false;
+
 pub struct Lexer {
     input: String,
      curr: usize,
@@ -84,6 +86,10 @@ impl Lexer {
                 self.column = 0;
             }
             self.read_char();
+        }
+
+        if DEBUG_LEXER {
+            println!("DEBUG_LEXER: reading '{}' at {}:{}", self.ch as char, self.line, self.column);
         }
 
         let tok = match self.ch {

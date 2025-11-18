@@ -2,44 +2,54 @@
 // Interference
 // Node, Edge
 
-use std::{collections::HashMap, vec};
+use std::{collections::HashMap};
 
-use crate::{intermediate::frame::Frame, intermediate::instruction::{Instruction}, intermediate::irgen::Operand};
+use crate::{intermediate::{frame::Frame, instruction::Instruction}, optimizer::{cfg::Block, liveness::Variable}};
 
+
+static REG_COUNT: usize = 8;
 
 pub struct Allocator {
-    instructions: Vec<Instruction>,
-    frames: HashMap<String, Frame>,
-    pub live_ranges: Vec<LiveRange>, // MUDAR
+    register_count: usize,
+    variables: HashMap<String, Variable>,
 }
 
-pub fn new_allocator(instructions: Vec<Instruction>, frames: HashMap<String, Frame>) -> Allocator {
+pub fn new_allocator(variables: HashMap<String, Variable>) -> Allocator {
     Allocator { 
-        instructions,
-        frames,
-        live_ranges: Vec::new(),
-    }
-}
-#[derive(Debug)]
-pub struct LiveRange {
-    name: String,
-    live_in: usize,
-    live_out: usize,
-    pub register_id: usize,
-}
-
-impl LiveRange {
-    pub fn check_interference(&self, other: &LiveRange) -> bool {
-        self.live_in <= other.live_in && self.live_out > other.live_in ||
-        self.live_in >= other.live_in && self.live_in < other.live_out
+        register_count: REG_COUNT,
+        variables
     }
 }
 
-pub struct LiveNow {
-}
 
 impl Allocator {
 
+    pub fn coloring(&mut self) {
+        //let mut spill = Vec::new();
+        let mut stack = Vec::new();
+
+        while !self.variables.is_empty() {
+            if let Some((_, var)) = self.variables.iter()
+            .find(|var|
+            var.1.edges.len() < self.register_count) {
+                stack.push((var.clone(), false));
+                self.variables.remove(&var.name.clone());
+            }
+            
+            
+
+        }
+
+
+    }
+
+
+
+
+
+
+
+/* 
     pub fn get_liveness(&mut self) -> &Vec<LiveRange> {
         let mut begin_pos = 0;
         let mut blocks = Vec::new();
@@ -124,4 +134,5 @@ impl Allocator {
         }
 
     }
+    */
 }

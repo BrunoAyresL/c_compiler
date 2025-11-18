@@ -88,7 +88,3 @@ pub enum Token {
     Invalid
     
 }
-
-impl Token {
-    
-}

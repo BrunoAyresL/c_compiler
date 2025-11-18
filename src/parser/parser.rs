@@ -3,8 +3,10 @@ use core::fmt;
 use crate::parser::lexer::{new_lexer, Lexer};
 use crate::parser::token::{Token, Type};
 use crate::parser::node::{ParserNode};
+
+static DEBUG_PARSER: bool = false;
 pub struct Parser {
-    lexer: Lexer,
+    pub lexer: Lexer,
     next_token: Token,
 }
 
@@ -45,10 +47,21 @@ impl fmt::Display for ParserError {
 
 impl Parser {
      
+    fn print_debug(&self, s: &str) {
+        if DEBUG_PARSER { 
+            println!("DEBUG_PARSER: parsing {:^18} at {:^20} | {}:{}", 
+            format!("{:?}",self.next_token), 
+            String::from("parse_") + s, 
+            self.lexer.line, 
+            self.lexer.column); 
+        }
+    }
+
     pub fn parse(&mut self) -> Result<ParserNode, ParserError> {
         self.parse_block()
     }
     fn parse_block(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("block");
         let mut statements: Vec<ParserNode> = Vec::new(); 
         while self.next_token != Token::CloseBracket && self.next_token != Token::EoF{
             statements.push(self.parse_stmt()?);
@@ -58,6 +71,7 @@ impl Parser {
         Ok(ParserNode::Block(statements))
     } 
     fn parse_stmt(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("stmt");
         match self.next_token {
             Token::If => self.parse_if(),
             Token::For => self.parse_for(),
@@ -86,7 +100,10 @@ impl Parser {
                 }
                 
             },
-            Token::OpenBracket => self.parse_block(),
+            Token::OpenBracket => {
+                self.read_token();
+                self.parse_block()
+            },
             _ => {
                 let n = self.parse_expression()?;
                 if self.next_token == Token::Semicolon {
@@ -98,6 +115,7 @@ impl Parser {
     }
 
     fn parse_for(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("for");
         self.read_token();
         self.expect(Token::OpenParenthesis)?;
         let exp1 = self.parse_stmt()?;
@@ -111,6 +129,7 @@ impl Parser {
     }
 
     fn parse_while(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("while");
         self.read_token();
         self.expect(Token::OpenParenthesis)?;
         let cond = self.parse_logical_or()?;
@@ -122,6 +141,7 @@ impl Parser {
 
 
     fn parse_if(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("if");
         self.read_token();
         self.expect(Token::OpenParenthesis)?;
         let cond = self.parse_logical_or()?;
@@ -136,6 +156,7 @@ impl Parser {
         Ok(ParserNode::If { cond: Box::from(cond), block: Box::from(block), else_stmt: else_stmt })
     }
     fn parse_else(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("else");
         if self.next_token != Token::If && self.next_token != Token::OpenBracket {
             return Err(ParserError::UnexpectedToken
                 { expected:Token::OpenBracket, found: self.next_token.clone(), line: self.lexer.line, pos: self.lexer.column});
@@ -147,12 +168,14 @@ impl Parser {
         self.parse_stmt()
     }
     fn parse_return(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("return");
         self.read_token();
         let exp = self.parse_logical_or()?;    
         self.expect(Token::Semicolon)?;
         Ok(ParserNode::Return { exp: Box::from(exp) })
     }
     fn parse_var_decl(&mut self, ident: String, t: Type) -> Result<ParserNode, ParserError> {
+        self.print_debug("var_decl");
         let ident_node = Box::from(ParserNode::Var{ident, ntype: t});
         if self.next_token == Token::Assign {
             self.read_token();
@@ -165,6 +188,7 @@ impl Parser {
         }
     }
     fn parse_func_decl(&mut self, ident: String, t: Type) -> Result<ParserNode, ParserError> {
+        self.print_debug("func_decl");
         self.read_token();
         let args = self.parse_func_args()?;
         self.expect(Token::CloseParenthesis)?;
@@ -174,6 +198,7 @@ impl Parser {
         Ok(ParserNode::FuncDecl { ident: ident_node, args, block: Box::from(block), ntype: t })
     }
     fn parse_func_args(&mut self) -> Result<Vec<ParserNode>, ParserError> {
+        self.print_debug("func_args");
         let mut args = Vec::new();
         while self.next_token != Token::CloseParenthesis {
             let mut _ntype = Type::Void;
@@ -199,6 +224,7 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("expression");
         let mut exps = vec![self.parse_assign()?];
         loop {
             match self.next_token {
@@ -212,6 +238,7 @@ impl Parser {
         Ok(ParserNode::Expression(exps))
     }
     fn parse_assign(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("assign");
         let mut a = self.parse_logical_or()?;
         match self.next_token {
             Token::Assign => {
@@ -230,6 +257,7 @@ impl Parser {
         Ok(a)    
     }
     fn parse_logical_or(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("logical_or");
         let mut a = self.parse_logical_and()?;
         loop {
             match self.next_token {
@@ -246,6 +274,7 @@ impl Parser {
         Ok(a)     
     }
     fn parse_logical_and(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("logical_and");
         let mut a = self.parse_bitwise_or()?;
         loop {
             match self.next_token {
@@ -262,6 +291,7 @@ impl Parser {
         Ok(a)   
     }
     fn parse_bitwise_or(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("bitwise_or");
         let mut a = self.parse_bitwise_xor()?;
         loop {
             match self.next_token {
@@ -278,6 +308,7 @@ impl Parser {
         Ok(a)   
     }
     fn parse_bitwise_xor(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("bitwise_xor");
         let mut a = self.parse_bitwise_and()?;
         loop {
             match self.next_token {
@@ -294,6 +325,7 @@ impl Parser {
         Ok(a)   
     }
     fn parse_bitwise_and(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("bitwise_and");
         let mut a = self.parse_equality()?;
         loop {
             match self.next_token {
@@ -310,6 +342,7 @@ impl Parser {
         Ok(a)   
     }
     fn parse_equality(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("equality");
         let mut a = self.parse_relational()?;
         match self.next_token {
             Token::Equal => {
@@ -331,6 +364,7 @@ impl Parser {
         Ok(a )   
     }
     fn parse_relational(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("relational");
         let mut a = self.parse_shift()?;
         match self.next_token {
             Token::Greater => {
@@ -366,6 +400,7 @@ impl Parser {
         Ok(a)    
     }    
     fn parse_shift(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("shift");
         let mut a = self.parse_additive()?;
         loop {
             match self.next_token {
@@ -389,6 +424,7 @@ impl Parser {
         Ok(a)
     }
     fn parse_additive(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("additive");
         let mut a = self.parse_term()?;
         loop {
             match self.next_token {
@@ -412,6 +448,7 @@ impl Parser {
         Ok(a)
     }
     fn parse_term(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("term");
         let mut a = self.parse_unary()?;
         loop {
             match self.next_token {
@@ -442,6 +479,7 @@ impl Parser {
         Ok(a)
     }
     fn parse_unary(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("unary");
         match self.next_token {
             Token::Not => {
                 self.read_token();
@@ -463,6 +501,7 @@ impl Parser {
         }
     }
     fn parse_factor(&mut self) -> Result<ParserNode, ParserError> {
+        self.print_debug("factor");
         let token = self.next_token.clone();
         match token {
             Token::Ident(ref id) => {
@@ -487,6 +526,7 @@ impl Parser {
         }
     }
     fn parse_func_call(&mut self, id: String) -> Result<ParserNode, ParserError> {
+        self.print_debug("func_call");
         self.read_token();
         let mut args = Vec::new();
         loop {
