@@ -3,9 +3,9 @@ use crate::{intermediate::analyzer::{Symbol, SymbolKind}, parser::token::Type};
 #[derive(Clone, Debug)]
 pub struct Frame {
     pub name: String,
-    params: Vec<Symbol>,
+    pub params: Vec<Symbol>,
     locals: Vec<Symbol>,
-    params_size: usize,
+    pub params_size: usize,
     pub locals_size: usize,
     pub range: (usize, usize),
 }
@@ -13,7 +13,7 @@ pub struct Frame {
 pub fn new_frame(name: String) -> Frame {
     Frame { 
         name, 
-        params: Vec::new(), 
+         params: Vec::new(), 
         locals: Vec::new(),
         params_size: 0,
         locals_size: 0,

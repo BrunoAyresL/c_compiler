@@ -16,6 +16,8 @@ pub enum Instruction {
     Goto(String),
     BeginFunc(usize),
     EndFunc,
+
+    CallStart(Vec<Operand>),
     PushParam(Operand),
     PopParams(usize),
     
@@ -84,8 +86,6 @@ impl Instruction {
     pub fn print(&self) -> String {
         match self {
 
-
-
             Instruction::Label(l) => {
                 format!("{}:", l)
             },
@@ -98,7 +98,9 @@ impl Instruction {
             Instruction::EndFunc => {
                 format!("   EndFunc")
             },
-
+            Instruction::CallStart(_) => {
+                format!("   CallStart")     
+            },
             Instruction::LCall(l) => {
                 format!("   LCall {}", l)
             }
@@ -230,8 +232,15 @@ impl Instruction {
             }          
             Instruction::Return { dest } => {
                 return vec![dest.clone()]
+            },
+            Instruction::PushParam(p) => {
+                return vec![p.clone()]
             }
-            _ => Vec::new(),
+            Instruction::Label(_) | Instruction::EndFunc | Instruction::BeginFunc(_) | 
+            Instruction::Goto(_) | Instruction::LCall(_) | Instruction::PopParams(_) |
+            Instruction::CallStart(_) => {
+                return Vec::new()
+            },
         }
     }
 

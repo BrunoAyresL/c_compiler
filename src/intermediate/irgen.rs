@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use indexmap::{IndexMap};
 use crate::{intermediate::frame::Frame, intermediate::instruction::Instruction, parser::node::{ConstValue, ParserNode}};
 
 static DEBUG_IR_GEN: bool = false;
@@ -6,12 +6,12 @@ static DEBUG_IR_GEN: bool = false;
 
 pub struct CodeGen {
     pub instructions: Vec<Instruction>,
-    pub frames: HashMap<String, Frame>,
+    pub frames: IndexMap<String, Frame>,
     temp_count: usize,
     label_count: usize,
 }
 
-pub fn new_codegen(frames: HashMap<String, Frame>) -> CodeGen {
+pub fn new_codegen(frames: IndexMap<String, Frame>) -> CodeGen {
     CodeGen {
         instructions: Vec::new(),
         frames,
@@ -97,7 +97,7 @@ impl CodeGen {
             },
 
             ParserNode::FuncCall { ident, args } => {
-
+                self.emit(Instruction::CallStart(Vec::new()));
                 for arg in args {
                     let mut t1 = self.cgen(arg);
                     match t1 {
@@ -110,11 +110,15 @@ impl CodeGen {
                     self.emit(Instruction::PushParam(t1));
                 }
                 self.emit(Instruction::LCall(ident.clone()));
+
+                let t2 = self.new_temp();
+                self.emit(Instruction::Assign { dest: t2.clone(), arg1: Operand::Temp("_ret".to_string()) });
+
                 if args.len() > 0 {
                     let size = args.len() * 4;
                     self.emit(Instruction::PopParams(size));
                 }
-                Operand::None
+                t2
             },
 
             // statements

@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{collections::HashMap};
+use indexmap::{IndexMap};
 use crate::intermediate::frame::{Frame, new_frame};
 use crate::parser::node::{ConstValue, ParserNode};
 use crate::parser::token::Type;
@@ -7,8 +7,8 @@ use crate::parser::token::Type;
 static DEBUG_ANALYZER: bool = false;
 
 pub struct SemanticAnalyzer {
-    symbol_table: Vec<HashMap<String, Symbol>>,
-    pub function_frames: HashMap<String, Frame>,
+    symbol_table: Vec<IndexMap<String, Symbol>>,
+    pub function_frames: IndexMap<String, Frame>,
     current_frame: Option<Frame>,
     scope_count: usize,
 }
@@ -57,8 +57,8 @@ impl fmt::Display for AnalyzerError {
 
 pub fn new_analyzer() -> SemanticAnalyzer {
     SemanticAnalyzer {
-        symbol_table: vec!(HashMap::new()),
-        function_frames: HashMap::new(),
+        symbol_table: vec!(IndexMap::new()),
+        function_frames: IndexMap::new(),
         current_frame: None,
         scope_count: 0,
     }
@@ -325,7 +325,7 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn current_table(&mut self) -> Result<&mut HashMap<String, Symbol>, AnalyzerError> {
+    fn current_table(&mut self) -> Result<&mut IndexMap<String, Symbol>, AnalyzerError> {
         match self.symbol_table.last_mut() {
             Some(h) => Ok(h),
             None => Err(AnalyzerError::ScopeError("last table not found".into())),
@@ -375,7 +375,7 @@ impl SemanticAnalyzer {
 
     fn new_scope(&mut self) {
         self.scope_count += 1;
-        self.symbol_table.push(HashMap::new());
+        self.symbol_table.push(IndexMap::new());
     }
 
     fn expect_type(&mut self, type1: &Type, type2: &mut Type) -> Result<(), AnalyzerError> {

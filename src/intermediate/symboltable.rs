@@ -1,13 +1,13 @@
-use std::collections::HashMap;
+use std::collections::IndexMap;
 
 use crate::analyzer::{AnalyzerError, Symbol, SymbolKind};
 #[derive(Debug)]
 pub struct SymbolTable {
-    pub table: HashMap<String, Symbol>,
+    pub table: IndexMap<String, Symbol>,
     pub scope: usize,
 }
 
-pub fn new_symbol_table(table: HashMap<String, Symbol>, scope: usize) -> SymbolTable {
+pub fn new_symbol_table(table: IndexMap<String, Symbol>, scope: usize) -> SymbolTable {
     SymbolTable { table, scope }
 }
 

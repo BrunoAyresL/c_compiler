@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
-use crate::{intermediate::{frame::Frame, instruction::Instruction, irgen::Operand}, optimizer::liveness::Variable, parser::node::ConstValue};
+use crate::{intermediate::{frame::{Frame}, instruction::Instruction, irgen::Operand}, optimizer::liveness::Variable};
 
 
 // para cada instrução:
@@ -13,9 +13,8 @@ use crate::{intermediate::{frame::Frame, instruction::Instruction, irgen::Operan
 // addq %r11, %rax
 // movq %rax, (endereço de t0) 
 
-const WINDOWS_REGISTERS: [&str; 14] = [
-    "%r8", "%r9", "%r10", "%r11", "%rcx", "%rdx", "%r14", "%r15",
-    "%rbx", "%rsi", "%rdi", "%rax", "%r12", "%r13", 
+const WINDOWS_REGISTERS: [&str; 12] = [
+    "%r10", "%r11", "%r12", "%r13", "%r14", "%r15", "%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9",
 ];
 
 
@@ -23,15 +22,17 @@ pub struct AsmGenerator {
     curr: usize,
     instructions: Vec<Instruction>,
     frame: Frame,
-    variables: HashMap<String, Variable>,
-    spill: HashMap<String, i32>,
+    variables: IndexMap<String, Variable>,
+    spill: IndexMap<String, i32>,
     reg_names: Vec<String>,    
     pub assembly: Vec<AsmInstruction>,
+    param_counter: usize,
+    saved_regs: Vec<Location>,
 }
 
 
 pub fn new_asm_generator(instructions: Vec<Instruction>, frame: Frame, 
-    variables: HashMap<String, Variable>, spill: HashMap<String, i32>) -> AsmGenerator {
+    variables: IndexMap<String, Variable>, spill: IndexMap<String, i32>) -> AsmGenerator {
         let reg_names = WINDOWS_REGISTERS
         .iter().map(|&s| s.to_string()).collect();
         AsmGenerator { 
@@ -39,7 +40,9 @@ pub fn new_asm_generator(instructions: Vec<Instruction>, frame: Frame,
             instructions, frame, 
             variables, spill, 
             reg_names,
-            assembly: Vec::new()
+            assembly: Vec::new(),
+            param_counter: 0,
+            saved_regs: Vec::new(),
     }
 }
 #[derive(Clone)]
@@ -52,7 +55,7 @@ impl Location {
     pub fn to_string(&self) -> String {
         match self {
             Location::Reg(s) => s.clone(),
-            Location::Imm(s) => {
+            Location::Imm(s) => { // mudar
                 format!("${s}")
             },
             Location::Stack(offset) => {
@@ -74,6 +77,8 @@ pub enum AsmInstruction {
     Ja(String),
     Jae(String),
 
+    Or(Location, Location),
+
     SetE(Location),
     SetNE(Location),
     SetL(Location),
@@ -87,9 +92,16 @@ pub enum AsmInstruction {
     Cmp(Location, Location),
     Add(Location, Location),
     Sub(Location, Location),
+    Mul(Location, Location),
+    Div(Location),
+    Cqo,
+
+
     Push(Location),
     Pop(Location),
-    
+    Call(String),
+
+    Comment(String),
 }
 
 
@@ -97,6 +109,7 @@ impl AsmGenerator {
 
     pub fn print_asm(&self) -> String {
         let mut s = format!(".globl {}\n", self.frame.name);
+
         for inst in &self.assembly {
             s.push_str(format!("{}\n", inst.to_string()).as_str());
         }
@@ -142,6 +155,28 @@ impl AsmGenerator {
                 Instruction::Goto(l) => {
                     self.emit(AsmInstruction::Jmp(l.clone()));
                 },
+                Instruction::CallStart(ops) => {
+                    for op in ops {
+                        let oper = self.operand_to_reg(op);
+                        self.saved_regs.push(oper.clone());
+                        self.emit(AsmInstruction::Push(oper));
+                    }
+                }
+                Instruction::PushParam(op) => {
+                    let op = self.operand_to_reg(op);
+                    let dest_str = WINDOWS_REGISTERS[6 + self.param_counter].to_string();
+                    self.emit(AsmInstruction::Mov(op, Location::Reg(dest_str.clone())));
+                    
+                }
+                Instruction::PopParams(_) => {
+                    for i in (0..self.saved_regs.len()).rev() {
+                        self.emit(AsmInstruction::Pop(self.saved_regs[i].clone()));
+                    }
+                    self.saved_regs.clear();
+                }
+                Instruction::LCall(l) => {
+                    self.emit(AsmInstruction::Call(l.clone()));
+                }
                 Instruction::Return { dest } => {
                     let dest = self.operand_to_reg(dest);
                     self.emit(AsmInstruction::Mov(dest, rax.clone()));
@@ -178,6 +213,23 @@ impl AsmGenerator {
                     }
                     
 
+                },
+                Instruction::LogicalOr { dest, arg1, arg2 } => {
+                        let a = self.operand_to_reg(arg1);
+                        let b = self.operand_to_reg(arg2);
+                        let dest = self.operand_to_reg(dest);
+                        self.emit(AsmInstruction::Mov(a, rax.clone()));
+                        self.emit(AsmInstruction::Or(b, rax.clone()));
+
+                    if let Instruction::IfZero { label, ..} = self.peek() {
+                        self.emit(AsmInstruction::Je(label.clone()));
+                        self.next_instruction();
+                    } else {
+                        let al = Location::Reg("%al".to_string());
+                        self.emit(AsmInstruction::SetE(al.clone()));
+                        self.emit(AsmInstruction::MovZbl(al, Location::Reg("%eax".to_string())));
+                        self.emit(AsmInstruction::Mov(rax.clone(), dest));
+                    }
                 },
                 Instruction::Equal { dest, arg1, arg2 } => {
                     let a = self.operand_to_reg(arg1);
@@ -295,7 +347,6 @@ impl AsmGenerator {
                     let b = self.operand_to_reg(arg2);
                     let dest = self.operand_to_reg(dest);
 
-
                     self.emit(AsmInstruction::Mov(a, rax.clone()));
                     self.emit(AsmInstruction::Add(b, Location::Reg("%rax".to_string())));
 
@@ -322,9 +373,63 @@ impl AsmGenerator {
                     self.emit(AsmInstruction::Mov(rax.clone(), dest));
 
                 },
+                Instruction::Mul { dest, arg1, arg2 } => {
+                    let a = self.operand_to_reg(arg1);
+                    let b = self.operand_to_reg(arg2);
+                    let dest = self.operand_to_reg(dest);
 
+                    self.emit(AsmInstruction::Mov(a, rax.clone()));
+                    self.emit(AsmInstruction::Mul(b, rax.clone()));
 
-                _ => (),
+                    if let Location::Reg(s) = &dest && s.contains("%rax") {
+                        self.next_instruction();
+                        continue;
+                    }
+
+                    self.emit(AsmInstruction::Mov(rax.clone(), dest));
+
+                },
+                Instruction::Div { dest, arg1, arg2 } => {
+                    // mudar depois
+                    let a = self.operand_to_reg(arg1);
+                    let b = self.operand_to_reg(arg2);
+                    let dest = self.operand_to_reg(dest);
+
+                    self.emit(AsmInstruction::Mov(a, rax.clone()));
+                    self.emit(AsmInstruction::Cqo);
+                    let rbx = Location::Reg("%rbx".to_string());
+                    self.emit(AsmInstruction::Mov(b, rbx.clone()));
+                    self.emit(AsmInstruction::Div(rbx));
+
+                    if let Location::Reg(s) = &dest && s.contains("%rax") {
+                        self.next_instruction();
+                        continue;
+                    }
+
+                    self.emit(AsmInstruction::Mov(rax.clone(), dest));
+                },
+                Instruction::Mod { dest, arg1, arg2 } => {
+                    // mudar depois
+                    let a = self.operand_to_reg(arg1);
+                    let b = self.operand_to_reg(arg2);
+                    let dest = self.operand_to_reg(dest);
+
+                    self.emit(AsmInstruction::Mov(a, rax.clone()));
+                    self.emit(AsmInstruction::Cqo);
+                    let rbx = Location::Reg("%rbx".to_string());
+                    self.emit(AsmInstruction::Mov(b, rbx.clone()));
+                    self.emit(AsmInstruction::Div(rbx));
+
+                    if let Location::Reg(s) = &dest && s.contains("%rdx") {
+                        self.next_instruction();
+                        continue;
+                    }
+                    let rdx = Location::Reg("%rdx".to_string());
+                    self.emit(AsmInstruction::Mov(rdx, dest));
+
+                },
+
+                _ => self.emit(AsmInstruction::Comment(format!("unknown instruction {} ", self.curr_instruction().print()))),
             }
             if !self.next_instruction() { break; }
         }
@@ -336,10 +441,19 @@ impl AsmGenerator {
         if let Operand::Const(c) = op {
             return Location::Imm(c.to_string()); // mudar depois
         }
-        let var = &self.variables[&op.print()];
+        let var = match self.variables.get(&op.print()) {
+            Some(v) => v,
+            None => panic!("CODEGEN: var '{}' not found.", op.print())
+        };
+        
+        if var.name == "_ret" {
+            return Location::Reg("%rax".to_string());
+        }
+
         if var.spilled {
             return Location::Stack(self.spill[&var.name]);
         } 
+
         return Location::Reg(self.reg_names[var.register_id].clone());
     }
 
@@ -374,6 +488,9 @@ impl AsmInstruction {
             AsmInstruction::Jae(l) => {
                 format!("\tjae {l}")
             },
+            AsmInstruction::Or(a, b) => {
+                format!("\tor {}, {}", a.to_string(), b.to_string())
+            }
             AsmInstruction::SetE(a) => {
                 format!("\tsete {}", a.to_string())
             }, 
@@ -391,7 +508,10 @@ impl AsmInstruction {
             },
             AsmInstruction::SetGE(a) => {
                 format!("\tsetge {}", a.to_string())
-            },          
+            },   
+            AsmInstruction::Call(s) => {
+                format!("\tcall {}", s)
+            }       
             AsmInstruction::Ret => {
                 format!("\tret")
             },
@@ -410,12 +530,24 @@ impl AsmInstruction {
             AsmInstruction::Sub(a, b) => {
                 format!("\tsubq {}, {}", a.to_string(), b.to_string())
             },
+            AsmInstruction::Mul(a, b) => {
+                format!("\timulq {}, {}", a.to_string(), b.to_string())
+            },
+            AsmInstruction::Div(a) => {
+                format!("\tidivq {}", a.to_string())
+            },
+            AsmInstruction::Cqo => {
+                format!("\tcqo")
+            },
             AsmInstruction::Push(a,) => {
                 format!("\tpushq {}", a.to_string())
             },
             AsmInstruction::Pop(a) => {
                 format!("\tpopq {}", a.to_string())
             },
+            AsmInstruction::Comment(s) => {
+                format!("# {}", s)
+            }
         }
     }
 }

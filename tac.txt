@@ -1,53 +1,38 @@
-func:
-   BeginFunc 24
-   x = 1
-   y = 10
-   z = 20
-   w = 30
-   t0 = x + y
-   t1 = t0 + z
-   a = t1
-   t2 = y > x
-   IfZero t2 Goto L0
-   w = 100
-   Goto L2
+factorial:
+   BeginFunc 0
+   t0 = n < 0
+   IfZero t0 Goto L0
+   t1 = 0
+   Return t1
 L0:
-   t3 = w < z
-   IfZero t3 Goto L2
-   w = 0
+   t2 = n == 0
+   t3 = n == 1
+   t4 = t2 || t3
+   IfZero t4 Goto L1
+   t5 = 1
+   Return t5
+   Goto L2
+L1:
+   CallStart
+   t6 = n - 1
+   PushParam t6
+   LCall factorial
+   t7 = _ret
+   PopParams 4
+   t8 = n * t7
+   Return t8
+   Goto L2
 L2:
-   t4 = w == w
-   IfZero t4 Goto L3
-   x = 200
-L3:
-   w = 0
-   i = 0
-   t5 = i < a
-   IfZero t5 Goto L4
-L5:
-   w = i
-   t6 = i + 1
-   i = t6
-   t7 = i < a
-   IfZero t7 Goto L4
-   Goto L5
-L4:
-   Return w
    EndFunc
-next:
-   BeginFunc 8
-   x = 0
-   y = 100
-   t8 = x < y
-   IfZero t8 Goto L6
-L7:
-   t9 = x + 2
-   x = t9
-   t10 = y + 1
-   y = t10
-   t11 = x < y
-   IfZero t11 Goto L6
-   Goto L7
-L6:
-   Return x
+func:
+   BeginFunc 4
+   CallStart
+   t9 = 3
+   PushParam t9
+   LCall factorial
+   t10 = _ret
+   PopParams 4
+   x = t10
+   t11 = x % 4
+   Return t11
    EndFunc

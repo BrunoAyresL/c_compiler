@@ -2,34 +2,35 @@
 // Interference
 // Node, Edge
 
-use std::{any::type_name, collections::{HashMap, HashSet}};
+use indexmap::{IndexMap, IndexSet};
+use crate::{intermediate::frame::{Frame}, optimizer::liveness::{InterferenceGraph, Variable}};
 
-use crate::optimizer::liveness::{InterferenceGraph, Variable};
 
-
-static REG_COUNT: usize = 8;
+static REG_COUNT: usize = 12;
 
 pub struct Allocator {
     register_count: usize,
     pub ifr_graph: InterferenceGraph,
-    pub spill: HashMap<String, i32>,
+    pub frame: Frame,
+    pub spill: IndexMap<String, i32>,
 }
 
-pub fn new_allocator(ifr_graph: InterferenceGraph) -> Allocator {
+pub fn new_allocator(ifr_graph: InterferenceGraph, frame: Frame) -> Allocator {
     Allocator { 
         register_count: REG_COUNT,
+        frame,
         ifr_graph,
-        spill: HashMap::new(),
+        spill: IndexMap::new(),
     }
 }
 
 
 impl Allocator {
 
-    fn variables(&self) -> & HashMap<String, Variable> {
+    fn variables(&self) -> & IndexMap<String, Variable> {
         &self.ifr_graph.variables
     }
-    fn edges(&self) -> & HashMap<String, HashSet<String>> {
+    fn edges(&self) -> & IndexMap<String, IndexSet<String>> {
         &self.ifr_graph.edges
     }
 
@@ -38,6 +39,17 @@ impl Allocator {
         let mut offset = 0;
         let reg_count = self.register_count;
         
+        // pre-coloring
+        let mut pre_color = 6;
+        for var in &self.frame.params {
+            if self.variables().contains_key(&var.name) { 
+                let v = self.ifr_graph.variables.get_mut(&var.name).unwrap();
+                v.register_id = pre_color;
+                pre_color += 1;
+            }
+        }
+
+
         while !self.variables().is_empty() {
             let mut to_remove: Option<String> = None;
             for (name, var) in self.ifr_graph.variables.iter() {
@@ -61,7 +73,7 @@ impl Allocator {
             let name = name.clone();
             self.remove_var(name);
         }
-        self.ifr_graph.edges = HashMap::new();
+        self.ifr_graph.edges = IndexMap::new();
         // coloring
         while !stack.is_empty() {
             let (mut var, edges, is_spilled) = stack.pop().expect("invalid pop stack on coloring");
@@ -73,7 +85,11 @@ impl Allocator {
                 let name = var.name.clone();
                 let mut reg_id = 0;
                 self.add_var(var.clone(), edges.clone());
-                let used_colors: HashSet<usize> = self.edges()[&name]
+                if self.variables().get(&name).unwrap().register_id != 0 {
+                    continue;
+                }
+
+                let used_colors: IndexSet<usize> = self.edges()[&name]
                 .iter()
                 .filter_map(|other| self.variables().get(other))
                 .map(|v| v.register_id)
@@ -82,7 +98,6 @@ impl Allocator {
                 while used_colors.contains(&reg_id) {
                     reg_id += 1;
                 }
-                
                 self.ifr_graph.variables.get_mut(&name).unwrap().register_id = reg_id;
 
             }
@@ -92,7 +107,7 @@ impl Allocator {
         
     }
 
-    fn add_var(&mut self, var: Variable, edges: HashSet<String>) {
+    fn add_var(&mut self, var: Variable, edges: IndexSet<String>) {
         let name = var.name.clone();
         self.ifr_graph.variables.insert(name.clone(), var.clone());
         self.ifr_graph.edges.insert(name.clone(), edges.clone());
@@ -108,10 +123,10 @@ impl Allocator {
     }
 
     fn remove_var(&mut self, name: String) {
-        self.ifr_graph.variables.remove(&name);
-        self.ifr_graph.edges.remove(&name);
+        self.ifr_graph.variables.swap_remove(&name);
+        self.ifr_graph.edges.swap_remove(&name);
         for (_, set) in self.ifr_graph.edges.iter_mut() {
-            set.remove(&name);
+            set.swap_remove(&name);
         }
     }
 

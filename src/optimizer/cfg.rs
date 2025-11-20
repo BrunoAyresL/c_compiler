@@ -1,5 +1,6 @@
 use core::fmt;
-use std::collections::{HashMap, HashSet};
+use indexmap::{IndexMap, IndexSet};
+
 
 use crate::intermediate::{frame::Frame, instruction::Instruction};
 
@@ -20,6 +21,7 @@ impl fmt::Display for TACError {
 #[derive(Debug)]
 pub struct ControlFlowGraph {
     pub blocks: Vec<Block>,
+    pub range: (usize, usize),
 }
 
 #[derive(Debug, Clone)]
@@ -30,10 +32,10 @@ pub struct Block {
     last: usize, // Ifzero, Goto, Return, EndFunc
     pub edges: Vec<usize>,
 
-    pub live_in: HashSet<String>,
-    pub live_out: HashSet<String>,
-    pub def_set: HashSet<String>,
-    pub use_set: HashSet<String>,
+    pub live_in: IndexSet<String>,
+    pub live_out: IndexSet<String>,
+    pub def_set: IndexSet<String>,
+    pub use_set: IndexSet<String>,
 }
 
 impl fmt::Display for Block {
@@ -42,15 +44,15 @@ impl fmt::Display for Block {
         let range_string = format!("{}-{}", self.first, self.last);
         let edges_string = format!("{:?}", self.edges);
         let label_string = self.label.as_deref().unwrap_or("-");
-        write!(f, "{:^9} {:^9} ->  {:^12}  {:^9} |  IN {:<4?} OUT {:<4?} DEF {:<4?} USE {:<4?}", 
+        write!(f, "{:^9} {:^9} ->  {:^12}  {:^9}  IN: {:^30} OUT: {:^30} DEF: {:^30} USE: {:^30}", 
         id_string, 
         range_string,
         edges_string,
         label_string,
-        self.live_in,
-        self.live_out,
-        self.def_set,
-        self.use_set,
+        format!("{:?}", self.live_in),
+        format!("{:?}", self.live_out),
+        format!("{:?}", self.def_set),
+        format!("{:?}", self.use_set),
         )
     }
 }
@@ -101,10 +103,10 @@ impl CFGBuilder {
             first: self.start,
             last: self.curr,
             edges: Vec::new(),
-            live_in: HashSet::new(),
-            live_out: HashSet::new(),
-            def_set: HashSet::new(),
-            use_set: HashSet::new()
+            live_in: IndexSet::new(),
+            live_out: IndexSet::new(),
+            def_set: IndexSet::new(),
+            use_set: IndexSet::new()
         };
 
         self.count += 1;
@@ -200,36 +202,50 @@ impl CFGBuilder {
         Ok(())
     }
     
-    pub fn build(&mut self) -> ControlFlowGraph {
+    pub fn build(&mut self, range: (usize, usize)) -> ControlFlowGraph {
         self.build_function_blocks();
         match self.link_block_edges() {
             Ok(_) => (),
             Err(e) => panic!("{}", e)
         }
         
-        ControlFlowGraph { blocks: self.blocks.clone() }
+        ControlFlowGraph { blocks: self.blocks.clone(), range }
     }
 
 }
 
 
-pub fn create_cfgs(frames: &mut HashMap<String, Frame>, instructions: &Vec<Instruction>) -> Vec<ControlFlowGraph> { // tbd
+pub fn create_cfgs(frames: &mut IndexMap<String, Frame>, instructions: &Vec<Instruction>) -> Vec<ControlFlowGraph> { // tbd
     let mut cfgs: Vec<ControlFlowGraph> = Vec::new();
     for (frame_name, fr) in frames {
-        let mut start = 0;
-        let mut end = 0;
+        let mut start = None;
+        let mut end = None;
         for (i, inst) in instructions.iter().enumerate() {
-            if let Instruction::Label(l) = inst && *l == *frame_name {
-                start = i;
-            } else if let Instruction::EndFunc = inst {
-                end = i;
+            match inst {
+                Instruction::Label(l) if l == frame_name => {
+                    start = Some(i);
+                },
+                Instruction::EndFunc => {
+                    if start.is_some() {
+                        end = Some(i);
+                        break;
+                    }
+                },
+                _ => (),
             }
         }
-        if start == end { continue; }
-        fr.range = (start, end);
+        let (s, e) = match (start, end) {
+            (Some(s), Some(e)) => (s, e),
+            _ => {
+                panic!("range not complete");
+            },
+        };
+
+        fr.range = (s, e);
         let mut cfg_builder = new_cfg_builder(frame_name.clone(), 
-            instructions[start..=end].to_vec());
-        cfgs.push(cfg_builder.build());
+            instructions[s..=e].to_vec());
+        cfgs.push(cfg_builder.build((s, e)));
+        
     }
     return cfgs;
 }

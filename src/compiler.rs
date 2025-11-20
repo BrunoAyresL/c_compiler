@@ -1,7 +1,7 @@
 
-use std::{ collections::HashMap, fs, io::{self, Write}, process::Command, thread::sleep, time::{Duration, Instant}};
+use std::{  fs, io::{self, Write}, process::Command, thread::sleep, time::{Duration, Instant}};
 use crate::{codegen::{allocation::new_allocator, codegen::new_asm_generator}, intermediate::{analyzer::new_analyzer, frame::Frame, instruction::Instruction, irgen::new_codegen}, optimizer::{cfg::{ControlFlowGraph, create_cfgs}, liveness::{InterferenceGraph, Variable, new_liveness_analyzer}}, parser::{node::{NODE_COUNT, ParserNode}, parser::{Parser, new_parser}}};
-
+use indexmap::IndexMap;
 
 static CALCULATE_TIME: bool = true;
 
@@ -13,7 +13,7 @@ static MAKE_TAC_FILE: bool = true;
 static PRINT_BLOCKS: bool = false;
 static CFG_INFO: bool = false;
 
-static CODEGEN_INFO: bool = true;
+static CODEGEN_INFO: bool = false;
 static MAKE_ASM_FILE: bool = true;
 static ASM_PATH: &str = "code.s";
 static ASM_CODE_OBJECT: &str = "code.o";
@@ -23,7 +23,7 @@ static EXECUTABLE: &str = "exec.exe";
 pub struct Compiler {
     program_node: ParserNode,
     instructions: Vec<Instruction>,
-    frames: HashMap<String, Frame>,
+    frames: IndexMap<String, Frame>,
     cfgs: Vec<ControlFlowGraph>,
     interference_graphs: Vec<InterferenceGraph>,
 }
@@ -32,7 +32,7 @@ pub fn new_compiler() -> Compiler {
     Compiler {
         program_node: ParserNode::Block(Vec::new()),
         instructions: Vec::new(),
-        frames: HashMap::new(),
+        frames: IndexMap::new(),
         cfgs: Vec::new(),
         interference_graphs: Vec::new(),
       }
@@ -124,15 +124,17 @@ impl Compiler {
         println!("- Control Flow Graphs created");
     
         for cfg in &self.cfgs {
-            let mut liveness_analyzer = new_liveness_analyzer(self.instructions.clone(),
+            
+            let (a, b) = cfg.range;
+            let mut lv_analyzer = new_liveness_analyzer(self.instructions[a..=b].to_vec(),
              cfg.blocks.clone());
             println!("- Liveness Analyzer created");
-            liveness_analyzer.gen_live_out();
+            lv_analyzer.gen_live_out();
             
             if PRINT_BLOCKS {
                 println!("BLOCKS:");
                 println!("{:^9} {:^9}     {:^9}  {:^7}", "[id]", "[range]", "[edges]", "[label]");
-                for block in &liveness_analyzer.blocks {
+                for block in &lv_analyzer.blocks {
                     println!("{}", block);
                 }
             }
@@ -143,14 +145,30 @@ impl Compiler {
                 }
                 println!("block count: {}", block_count);
             }
-            liveness_analyzer.gen_inst_live_out();    
-            liveness_analyzer.create_interference_graph();
+            lv_analyzer.gen_inst_live_out();    
+            lv_analyzer.create_interference_graph();
+            
+            for l in lv_analyzer.inst_liveness {
+                println!("{:?}", l);
+            }
+
             if CFG_INFO {
-                for (i, var) in liveness_analyzer.interference_graph.variables.iter().enumerate() {
+                for (i, var) in lv_analyzer.interference_graph.variables.iter().enumerate() {
                     println!("{i} -> {:?}", var);
                 } 
             }
-            self.interference_graphs.push(liveness_analyzer.interference_graph); 
+            self.interference_graphs.push(lv_analyzer.interference_graph); 
+
+            // handle callstart
+            let mut i = 0;
+            for inst in &mut self.instructions[a..=b] {
+                println!("{}", inst.print());
+                if let Instruction::CallStart(ops) = inst {
+                    *ops = lv_analyzer.callstarts[i].clone();
+                    i += 1;
+                }
+            }
+            
         }
         
     }
@@ -168,11 +186,22 @@ impl Compiler {
 
         let mut output = String::new();
         for ig in self.interference_graphs.iter() {
-            let mut allocator = new_allocator(ig.clone()); 
-            allocator.coloring();
-            
-            let curr_frame = frames.pop().unwrap();
+            // setup frame
+            let curr_frame = *frames.first().unwrap();
+            frames.remove(0);
             let (start, end) = curr_frame.range;
+
+            let mut allocator = new_allocator(ig.clone(), curr_frame.clone()); 
+            allocator.coloring();
+            if CODEGEN_INFO {
+                for e in &allocator.ifr_graph.edges {
+                    println!("edge: {:?}", e);
+                }
+                for v in &allocator.ifr_graph.variables {
+                    println!("var: {:?}", v);
+                }
+            }
+            
 
             let mut asm_gen = new_asm_generator(self.instructions[start..=end].to_vec(),
                 curr_frame.clone(), 
