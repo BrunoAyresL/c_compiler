@@ -542,7 +542,7 @@ impl Parser {
     }
     pub fn read_token(&mut self) {
         if self.next_token != Token::EoF {
-            self.next_token = self.lexer.next_token().expect("Erro (rt)");
+            self.next_token = self.lexer.next_token().expect("LexerError (read_token)");
         }
     }
     fn expect(&mut self, t: Token) -> Result<Token, ParserError> {

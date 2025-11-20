@@ -42,7 +42,7 @@ impl fmt::Display for Block {
         let range_string = format!("{}-{}", self.first, self.last);
         let edges_string = format!("{:?}", self.edges);
         let label_string = self.label.as_deref().unwrap_or("-");
-        write!(f, "{:^9} {:^9} ->  {:^9}  {:^7} |  IN {:<4?} OUT {:<4?} DEF {:<4?} USE {:<4?}", 
+        write!(f, "{:^9} {:^9} ->  {:^12}  {:^9} |  IN {:<4?} OUT {:<4?} DEF {:<4?} USE {:<4?}", 
         id_string, 
         range_string,
         edges_string,

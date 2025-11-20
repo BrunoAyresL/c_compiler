@@ -1,21 +1,7 @@
 func:
-   BeginFunc 12
-   z = 10
-   x = 0
-   y = 1
-   t0 = x < n
-   IfZero t0 Goto L0
-L1:
-   t1 = x * 2
-   t2 = t1 + y
-   z = t2
-   t3 = x + 1
-   x = t3
-   t4 = x + z
-   y = t4
-   t5 = x < n
-   IfZero t5 Goto L0
-   Goto L1
-L0:
-   Return y
+   BeginFunc 8
+   x = 1
+   y = 10
+   t0 = x + y
+   Return t0
    EndFunc

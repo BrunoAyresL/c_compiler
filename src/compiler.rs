@@ -1,38 +1,35 @@
-use std::{cmp::Ordering, collections::HashMap, fs, time::Instant};
 
-use crate::{intermediate::{analyzer::{SemanticAnalyzer, new_analyzer}, frame::Frame, instruction::Instruction, irgen::{CodeGen, new_codegen}}, optimizer::{cfg::{ControlFlowGraph, create_cfgs}, liveness::new_liveness_analyzer}, parser::{node::{NODE_COUNT, ParserNode}, parser::{Parser, new_parser}}};
+use std::{ collections::HashMap, fs, time::Instant};
+use crate::{codegen::allocation::new_allocator, intermediate::{analyzer::new_analyzer, frame::Frame, instruction::Instruction, irgen::new_codegen}, optimizer::{cfg::{ControlFlowGraph, create_cfgs}, liveness::{InterferenceGraph, Variable, new_liveness_analyzer}}, parser::{node::{NODE_COUNT, ParserNode}, parser::{Parser, new_parser}}};
 
 
-static CALCULATE_TIME: bool = true;
+static CALCULATE_TIME: bool = false;
 
-static SOURCE_PATH: &str = "code.c";
-static SOURCE_FILE_INFO: bool = false;
-
-static PARSE_INFO: bool = false;
+static PARSE_INFO: bool = true;
 
 static TAC_PATH: &str = "tac.txt";
 static MAKE_TAC_FILE: bool = true;
 
-static PRINT_BLOCKS: bool = false;
-static CFG_INFO: bool = false;
+static PRINT_BLOCKS: bool = true;
+static CFG_INFO: bool = true;
+
+static CODEGEN_INFO: bool = true;
 
 pub struct Compiler {
-    input: String,
     program_node: ParserNode,
     instructions: Vec<Instruction>,
     frames: HashMap<String, Frame>,
     cfgs: Vec<ControlFlowGraph>,
-
-
+    interference_graphs: Vec<InterferenceGraph>,
 }
 
 pub fn new_compiler() -> Compiler {
     Compiler {
-        input: String::new(), 
         program_node: ParserNode::Block(Vec::new()),
         instructions: Vec::new(),
         frames: HashMap::new(),
         cfgs: Vec::new(),
+        interference_graphs: vec![InterferenceGraph {variables: HashMap::new(), edges: HashMap::new()}],
       }
 }
 
@@ -41,10 +38,15 @@ impl Compiler {
         let now = Instant::now();
         
         self.parse(file_path);
+
         self.analyse_semantic();
+
         self.generate_ir();
+
         self.generate_cfgs();
+
         self.generate_assembly();
+        
 
         if CALCULATE_TIME {
             let end_time = now.elapsed();
@@ -137,17 +139,24 @@ impl Compiler {
         liveness_analyzer.gen_inst_live_out();    
         liveness_analyzer.create_interference_graph();
         if CFG_INFO {
-            for (i, var) in liveness_analyzer.variables.iter().enumerate() {
+            for (i, var) in liveness_analyzer.interference_graph.variables.iter().enumerate() {
                 println!("{i} -> {:?}", var);
             } 
         }
+        self.interference_graphs.push(liveness_analyzer.interference_graph);
     }
 
     fn generate_assembly(&mut self) {
         println!("\n---------------------- CODEGEN ---------------------");
         println!("Starting Register Allocation:");
-        //let mut allocator = new_allocator(liveness_analyzer.variables);
-        //println!("- Allocator created");
+        let mut allocator = new_allocator(self.interference_graphs[1].clone()); // mudar
+        println!("- Allocator created");
+        allocator.coloring();
+        if CODEGEN_INFO {
+            println!("var+temp count: {}", allocator.ifr_graph.variables.len());
+            println!("spill count: {}", allocator.spill.len());
+        }
+        println!("end");
     }
 
 }

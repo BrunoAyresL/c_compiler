@@ -2,137 +2,118 @@
 // Interference
 // Node, Edge
 
-use std::{collections::HashMap};
+use std::{any::type_name, collections::{HashMap, HashSet}};
 
-use crate::{intermediate::{frame::Frame, instruction::Instruction}, optimizer::{cfg::Block, liveness::Variable}};
+use crate::optimizer::liveness::{InterferenceGraph, Variable};
 
 
 static REG_COUNT: usize = 8;
 
 pub struct Allocator {
     register_count: usize,
-    variables: HashMap<String, Variable>,
+    pub ifr_graph: InterferenceGraph,
+    pub spill: HashMap<String, i32>,
 }
 
-pub fn new_allocator(variables: HashMap<String, Variable>) -> Allocator {
+pub fn new_allocator(ifr_graph: InterferenceGraph) -> Allocator {
     Allocator { 
         register_count: REG_COUNT,
-        variables
+        ifr_graph,
+        spill: HashMap::new(),
     }
 }
 
 
 impl Allocator {
 
+    fn variables(&self) -> & HashMap<String, Variable> {
+        &self.ifr_graph.variables
+    }
+    fn edges(&self) -> & HashMap<String, HashSet<String>> {
+        &self.ifr_graph.edges
+    }
+
     pub fn coloring(&mut self) {
-        //let mut spill = Vec::new();
-        let mut stack = Vec::new();
+        let mut stack  = Vec::new();
+        let mut offset = 0;
+        let reg_count = self.register_count;
+        
+        while !self.variables().is_empty() {
+            let mut to_remove: Option<String> = None;
+            for (name, var) in self.ifr_graph.variables.iter() {
+                let edges_len = self.edges()[name].len();
+                
+                if edges_len < reg_count {
+                    to_remove = Some(name.clone());
+                    stack.push((var.clone(), self.edges()[name].clone(), false));
+                    break;
+                }  
+            }
 
-        while !self.variables.is_empty() {
-            if let Some((_, var)) = self.variables.iter()
-            .find(|var|
-            var.1.edges.len() < self.register_count) {
-                stack.push((var.clone(), false));
-                self.variables.remove(&var.name.clone());
+            if let Some(name) = to_remove {
+                self.remove_var(name);
+                
+                continue;
             }
             
+            let (name, var) = self.variables().iter().last().unwrap();
+            stack.push((var.clone(), self.edges()[name].clone(), true));
+            let name = name.clone();
+            self.remove_var(name);
+        }
+        self.ifr_graph.edges = HashMap::new();
+        // coloring
+        while !stack.is_empty() {
+            let (mut var, edges, is_spilled) = stack.pop().expect("invalid pop stack on coloring");
+            if is_spilled {
+                var.spilled = true;
+                self.spill.insert(var.name.clone(), offset);
+                offset -= 8;
+            } else {
+                let name = var.name.clone();
+                let mut reg_id = 0;
+                self.add_var(var.clone(), edges.clone());
+                let used_colors: HashSet<usize> = self.edges()[&name]
+                .iter()
+                .filter_map(|other| self.variables().get(other))
+                .map(|v| v.register_id)
+                .collect();
             
-
-        }
-
-
-    }
-
-
-
-
-
-
-
-/* 
-    pub fn get_liveness(&mut self) -> &Vec<LiveRange> {
-        let mut begin_pos = 0;
-        let mut blocks = Vec::new();
-        for (i, inst) in self.instructions.iter_mut().enumerate() {
-            if let Instruction::BeginFunc(_) = inst {
-               begin_pos = i;
-            }
-            if let Instruction::EndFunc = inst {
-                blocks.push((begin_pos, i));
-            }
-        }
-
-        for (begin, end) in blocks {
-            self.analyze_block(begin, end);
-        }
-        &self.live_ranges
-    }
-
-    fn analyze_block(&mut self, begin_pos: usize, end_pos: usize) {
-        let mut live_out: HashMap<String, usize> = HashMap::new();
-
-        let mut curr_pos = end_pos;
-
-        while curr_pos > begin_pos {
-            let inst = &self.instructions[curr_pos];
-            let def = inst.def();
-            if let Some(Operand::Temp(s)) = def {
-
-                if let Some(live_out) = live_out.remove(&s) {
-                    self.live_ranges.push(LiveRange {
-                        name: s, 
-                        live_in: curr_pos, 
-                        live_out,
-                        register_id: 0,
-                    });
+                while used_colors.contains(&reg_id) {
+                    reg_id += 1;
                 }
-
+                
+                self.ifr_graph.variables.get_mut(&name).unwrap().register_id = reg_id;
             }
-            let uses = inst.uses();
-            for op in uses {
-                if let Operand::Temp(s) = op {
-                    if live_out.contains_key(&s) {
-                        continue;
-                    } else {
-                        live_out.insert(s, curr_pos);
-                    }
-                }
-            }
-            
-            curr_pos -= 1;
+            println!("var: {:?}", var);
         }
+
+
         
     }
 
-    pub fn allocate_registers(&mut self) {
-        // graph
-        let mut lv_table : Vec<Vec<usize>> = vec![vec![]; self.live_ranges.len()];
-
-        for (i, lr1) in self.live_ranges.iter().enumerate() {
-            for (ii, lr2) in self.live_ranges.iter().enumerate() {
-                if i == ii { continue; }
-                if lr1.check_interference(lr2) {
-                    lv_table[i].push(ii);
-                }
+    fn add_var(&mut self, var: Variable, edges: HashSet<String>) {
+        let name = var.name.clone();
+        self.ifr_graph.variables.insert(name.clone(), var.clone());
+        self.ifr_graph.edges.insert(name.clone(), edges.clone());
+        
+        for other in &edges {
+            if other == &name {
+                continue;
             }
-        }
-        // coloring
 
-        for (i, edges) in lv_table.iter().enumerate() {
-            let mut reg = 0;
-            let mut used_regs = Vec::new();
-            for ii in edges {
-                let nb = &self.live_ranges[*ii];
-                used_regs.push(nb.register_id);
-                if nb.register_id == reg {
-                    while used_regs.contains(&reg) {
-                        reg += 1;
-                    }
-                }
-            }
-            self.live_ranges[i].register_id = reg;
+            self.ifr_graph.edges.entry(other.clone()).or_default()
+            .insert(name.clone());  
         }
-
     }
-    */
+
+    fn remove_var(&mut self, name: String) {
+        self.ifr_graph.variables.remove(&name);
+        self.ifr_graph.edges.remove(&name);
+        for (_, set) in self.ifr_graph.edges.iter_mut() {
+            set.remove(&name);
+        }
+    }
+
+
 }

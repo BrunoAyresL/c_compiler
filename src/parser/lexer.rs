@@ -14,15 +14,14 @@ pub struct Lexer {
 #[derive(Debug)]
 pub enum LexerError {
     InvalidChar(char, usize),
-    InvalidInt(usize),
+    InvalidConst(String, usize),
 }
 
 impl fmt::Display for LexerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LexerError::InvalidChar(c, pos) => write!(f, "LexerError: invalid char '{}' found in position {}.", c, pos),
-            LexerError::InvalidInt(pos) => write!(f, "LexerError: invalid int found in position {}.", pos)
-        }
+            LexerError::InvalidConst(c, pos) => write!(f, "LexerError: invalid const '{}' found in position {}.", c, pos),        }
     }
 }
 
@@ -57,18 +56,50 @@ impl Lexer {
         
     }
 
-    fn read_int(&mut self) -> Result<i32, LexerError> {
+    fn read_const(&mut self) -> Result<ConstValue, LexerError> {
+        let mut ctype = Type::Int;
         let start = self.curr;
-        while self.ch.is_ascii_digit() {
+        while self.ch.is_ascii_digit() || self.ch == b'.'{
+            if self.ch == b'.' {
+                ctype = Type::Double;
+            }
             self.read_char();
         }
-
-        let num_str = self.input[start..self.curr].to_string();
-        let n = num_str.parse();
-        match n {
-            Ok(u) => Ok(u),
-            _ => return Err(LexerError::InvalidInt(self.curr))
+        if self.ch == b'f' {
+            if ctype != Type::Double {
+                return Err(LexerError::InvalidConst(self.input[start..=self.curr].to_string(), start))
+            }
+            ctype = Type::Float;
         }
+
+        let const_str = self.input[start..self.curr].to_string();
+
+        match ctype {
+            Type::Int => {
+                let int_str = const_str.parse::<i32>();
+                match int_str {
+                    Ok(i) => return Ok(ConstValue::Int(i)),
+                    _ => return Err(LexerError::InvalidConst(const_str, start))
+                }
+            },
+            Type::Float => {
+                self.read_char();
+                let float_str = const_str.parse::<f32>();
+                match float_str {
+                    Ok(f) => return Ok(ConstValue::Float(f)),
+                    _ => return Err(LexerError::InvalidConst(const_str, start))
+                }
+            },
+            Type::Double => {
+                let double_str = const_str.parse::<f64>();
+                match double_str {
+                    Ok(i) => return Ok(ConstValue::Double(i)),
+                    _ => return Err(LexerError::InvalidConst(const_str, start))
+                }
+            },
+            _ => return Err(LexerError::InvalidConst(const_str, start))
+        }
+
     }
 
     fn read_ident(&mut self) -> String {
@@ -188,7 +219,7 @@ impl Lexer {
             },
             
             // const
-            b'0'..=b'9' => return Ok(Token::Const(ConstValue::Int(self.read_int()?))),
+            b'0'..=b'9' => return Ok(Token::Const(self.read_const()?)),
             0 => Token::EoF,
             _ => return Err(LexerError::InvalidChar(self.ch as char, self.curr)),
         };

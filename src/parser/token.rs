@@ -29,6 +29,9 @@ impl Type {
             Type::Void => 4,
         }
     }
+    pub fn is_number(&self) -> bool {
+        *self != Type::Char
+    }
 }
 
 #[derive(Debug)]

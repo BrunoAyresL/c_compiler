@@ -123,8 +123,8 @@ impl SemanticAnalyzer {
                 }
                 match exp {
                     Some(n) => {
-                        let type2 = self.analyze_node(n)?;
-                        self.expect_type(*ntype, type2)?;
+                        let mut type2 = self.analyze_node(n)?;
+                        self.expect_type(ntype, &mut type2)?;
                         self.declare_variable(&name, true, *ntype)?;
                     },
                     None => self.declare_variable(&name, false, *ntype)?,
@@ -140,8 +140,9 @@ impl SemanticAnalyzer {
                     return Err(AnalyzerError::UndeclaredVar{ var:name, last_func: self.frame_string()});
                 }
                 let type1 = self.initialize_variable(&name)?;
-                let type2 = self.analyze_node(right)?;
-                self.expect_type(type1, type2)?;
+                let mut type2 = self.analyze_node(right)?;
+                self.expect_type(&type1, &mut type2)?;
+
                 return Ok(type1);
             },
             ParserNode::For { exp1, exp2, exp3, block } => {
@@ -193,8 +194,8 @@ impl SemanticAnalyzer {
             ParserNode::BitwiseXor {left, right} | ParserNode::BitwiseOr {left, right} |
             ParserNode::LogicalAnd {left, right} | ParserNode::LogicalOr {left, right} => {
                 let type1 = self.analyze_node(left)?;
-                let type2 = self.analyze_node(right)?;
-                self.expect_type(type1, type2)?;
+                let mut type2 = self.analyze_node(right)?;
+                self.expect_type(&type1, &mut type2)?;
                 return Ok(type1);
             },
 
@@ -377,11 +378,15 @@ impl SemanticAnalyzer {
         self.symbol_table.push(HashMap::new());
     }
 
-    fn expect_type(&mut self, type1: Type, type2: Type) -> Result<(), AnalyzerError> {
+    fn expect_type(&mut self, type1: &Type, type2: &mut Type) -> Result<(), AnalyzerError> {
         if type1 == type2 {
             Ok(())
+        } else if type1.is_number() && type2.is_number() {
+            *type2 = *type1;
+            Ok(())
         } else {
-            Err(AnalyzerError::TypeMismatch{type1, type2, last_func: self.frame_string()})
+
+            Err(AnalyzerError::TypeMismatch{type1: *type1, type2: *type2, last_func: self.frame_string()})
         }  
     }
 
