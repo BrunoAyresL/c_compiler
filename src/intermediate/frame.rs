@@ -7,6 +7,7 @@ pub struct Frame {
     locals: Vec<Symbol>,
     params_size: usize,
     pub locals_size: usize,
+    pub range: (usize, usize),
 }
 
 pub fn new_frame(name: String) -> Frame {
@@ -16,6 +17,7 @@ pub fn new_frame(name: String) -> Frame {
         locals: Vec::new(),
         params_size: 0,
         locals_size: 0,
+        range: (0,0)
     }
 }
 

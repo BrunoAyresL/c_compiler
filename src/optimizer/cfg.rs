@@ -213,9 +213,9 @@ impl CFGBuilder {
 }
 
 
-pub fn create_cfgs(frames: &HashMap<String, Frame>, instructions: &Vec<Instruction>) -> Vec<ControlFlowGraph> { // tbd
+pub fn create_cfgs(frames: &mut HashMap<String, Frame>, instructions: &Vec<Instruction>) -> Vec<ControlFlowGraph> { // tbd
     let mut cfgs: Vec<ControlFlowGraph> = Vec::new();
-    for (frame_name,_) in frames {
+    for (frame_name, fr) in frames {
         let mut start = 0;
         let mut end = 0;
         for (i, inst) in instructions.iter().enumerate() {
@@ -226,7 +226,7 @@ pub fn create_cfgs(frames: &HashMap<String, Frame>, instructions: &Vec<Instructi
             }
         }
         if start == end { continue; }
-        
+        fr.range = (start, end);
         let mut cfg_builder = new_cfg_builder(frame_name.clone(), 
             instructions[start..=end].to_vec());
         cfgs.push(cfg_builder.build());

@@ -84,8 +84,8 @@ impl Allocator {
                 }
                 
                 self.ifr_graph.variables.get_mut(&name).unwrap().register_id = reg_id;
+
             }
-            println!("var: {:?}", var);
         }
 
 

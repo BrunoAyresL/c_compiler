@@ -1,19 +1,24 @@
 
-use std::{ collections::HashMap, fs, time::Instant};
-use crate::{codegen::allocation::new_allocator, intermediate::{analyzer::new_analyzer, frame::Frame, instruction::Instruction, irgen::new_codegen}, optimizer::{cfg::{ControlFlowGraph, create_cfgs}, liveness::{InterferenceGraph, Variable, new_liveness_analyzer}}, parser::{node::{NODE_COUNT, ParserNode}, parser::{Parser, new_parser}}};
+use std::{ collections::HashMap, fs, io::{self, Write}, process::Command, thread::sleep, time::{Duration, Instant}};
+use crate::{codegen::{allocation::new_allocator, codegen::new_asm_generator}, intermediate::{analyzer::new_analyzer, frame::Frame, instruction::Instruction, irgen::new_codegen}, optimizer::{cfg::{ControlFlowGraph, create_cfgs}, liveness::{InterferenceGraph, Variable, new_liveness_analyzer}}, parser::{node::{NODE_COUNT, ParserNode}, parser::{Parser, new_parser}}};
 
 
-static CALCULATE_TIME: bool = false;
+static CALCULATE_TIME: bool = true;
 
-static PARSE_INFO: bool = true;
+static PARSE_INFO: bool = false;
 
 static TAC_PATH: &str = "tac.txt";
 static MAKE_TAC_FILE: bool = true;
 
-static PRINT_BLOCKS: bool = true;
-static CFG_INFO: bool = true;
+static PRINT_BLOCKS: bool = false;
+static CFG_INFO: bool = false;
 
 static CODEGEN_INFO: bool = true;
+static MAKE_ASM_FILE: bool = true;
+static ASM_PATH: &str = "code.s";
+static ASM_CODE_OBJECT: &str = "code.o";
+static HELPER_FILE: &str = "main.c";
+static EXECUTABLE: &str = "exec.exe";
 
 pub struct Compiler {
     program_node: ParserNode,
@@ -29,7 +34,7 @@ pub fn new_compiler() -> Compiler {
         instructions: Vec::new(),
         frames: HashMap::new(),
         cfgs: Vec::new(),
-        interference_graphs: vec![InterferenceGraph {variables: HashMap::new(), edges: HashMap::new()}],
+        interference_graphs: Vec::new(),
       }
 }
 
@@ -47,11 +52,12 @@ impl Compiler {
 
         self.generate_assembly();
         
-
         if CALCULATE_TIME {
             let end_time = now.elapsed();
-            println!("\nprogram duration: {} ms", end_time.as_millis());
+            println!("\ncompile duration: {} ms", end_time.as_millis());
         }
+
+        self.linker_run();
     }
 
     fn parse(&mut self, file_path: &str) {
@@ -114,49 +120,116 @@ impl Compiler {
     fn generate_cfgs(&mut self) {
         println!("\n---------------- CONTROL FLOW GRAPH ----------------");
         println!("Starting Block Building");
-        self.cfgs = create_cfgs(&self.frames, &self.instructions);
+        self.cfgs = create_cfgs(&mut self.frames, &self.instructions);
         println!("- Control Flow Graphs created");
     
-    
-        let mut liveness_analyzer = new_liveness_analyzer(self.instructions.clone(), self.cfgs[0].blocks.clone());
-        println!("- Liveness Analyzer created");
-        liveness_analyzer.gen_live_out();
+        for cfg in &self.cfgs {
+            let mut liveness_analyzer = new_liveness_analyzer(self.instructions.clone(),
+             cfg.blocks.clone());
+            println!("- Liveness Analyzer created");
+            liveness_analyzer.gen_live_out();
+            
+            if PRINT_BLOCKS {
+                println!("BLOCKS:");
+                println!("{:^9} {:^9}     {:^9}  {:^7}", "[id]", "[range]", "[edges]", "[label]");
+                for block in &liveness_analyzer.blocks {
+                    println!("{}", block);
+                }
+            }
+            if CFG_INFO {
+                let mut block_count = 0;
+                for cfg in &self.cfgs {
+                    block_count += cfg.blocks.len();
+                }
+                println!("block count: {}", block_count);
+            }
+            liveness_analyzer.gen_inst_live_out();    
+            liveness_analyzer.create_interference_graph();
+            if CFG_INFO {
+                for (i, var) in liveness_analyzer.interference_graph.variables.iter().enumerate() {
+                    println!("{i} -> {:?}", var);
+                } 
+            }
+            self.interference_graphs.push(liveness_analyzer.interference_graph); 
+        }
         
-        if PRINT_BLOCKS {
-            println!("BLOCKS:");
-            println!("{:^9} {:^9}     {:^9}  {:^7}", "[id]", "[range]", "[edges]", "[label]");
-            for block in &liveness_analyzer.blocks {
-                println!("{}", block);
-            }
-        }
-        if CFG_INFO {
-            let mut block_count = 0;
-            for cfg in &self.cfgs {
-                block_count += cfg.blocks.len();
-            }
-            println!("block count: {}", block_count);
-        }
-        liveness_analyzer.gen_inst_live_out();    
-        liveness_analyzer.create_interference_graph();
-        if CFG_INFO {
-            for (i, var) in liveness_analyzer.interference_graph.variables.iter().enumerate() {
-                println!("{i} -> {:?}", var);
-            } 
-        }
-        self.interference_graphs.push(liveness_analyzer.interference_graph);
     }
 
     fn generate_assembly(&mut self) {
         println!("\n---------------------- CODEGEN ---------------------");
         println!("Starting Register Allocation:");
-        let mut allocator = new_allocator(self.interference_graphs[1].clone()); // mudar
+        
         println!("- Allocator created");
-        allocator.coloring();
-        if CODEGEN_INFO {
-            println!("var+temp count: {}", allocator.ifr_graph.variables.len());
-            println!("spill count: {}", allocator.spill.len());
+
+        let mut frames = Vec::new();
+        for (_, frame) in self.frames.iter() {
+            frames.push(frame);
         }
+
+        let mut output = String::new();
+        for ig in self.interference_graphs.iter() {
+            let mut allocator = new_allocator(ig.clone()); 
+            allocator.coloring();
+            
+            let curr_frame = frames.pop().unwrap();
+            let (start, end) = curr_frame.range;
+
+            let mut asm_gen = new_asm_generator(self.instructions[start..=end].to_vec(),
+                curr_frame.clone(), 
+                allocator.ifr_graph.variables, 
+                allocator.spill);
+            asm_gen.generate_assembly();
+            output.push_str(asm_gen.print_asm().as_str());
+        }
+
+        
+
+        if MAKE_ASM_FILE {
+            fs::write(ASM_PATH, output).expect("write file failed");
+            println!("- TAC file created at '{ASM_PATH}'");
+        }
+
         println!("end");
+    }
+
+    fn linker_run(&mut self) {
+        println!("\n---------------------- PROGRAM ---------------------");
+        println!("- Running GCC: '{}' -> '{}'", ASM_PATH, ASM_CODE_OBJECT);
+        let output_gcc = Command::new("gcc")
+        .arg("-c").arg(ASM_PATH)
+        .arg("-o").arg(ASM_CODE_OBJECT)
+        .output().expect("gcc error");
+
+        if !output_gcc.status.success() {
+            eprintln!("Linking Error (GCC/Linker):");
+            eprintln!("{}", String::from_utf8_lossy(&output_gcc.stderr));
+            println!("{}", io::Error::new(io::ErrorKind::Other, "gcc object failed"));
+        }
+        
+        println!("- Running LINKER: '{}' + '{}' -> '{}'", HELPER_FILE, ASM_CODE_OBJECT, EXECUTABLE);
+        let output_link = Command::new("gcc")
+        .arg(HELPER_FILE).arg(ASM_CODE_OBJECT)
+        .arg("-o")
+        .arg(EXECUTABLE)
+        .output().expect("linker error");
+
+        if !output_link.status.success() {
+            eprintln!("Linking Error (GCC/Linker):");
+            eprintln!("{}", String::from_utf8_lossy(&output_link.stderr));
+            println!("{}", io::Error::new(io::ErrorKind::Other, "exe linking failed"));
+        } 
+
+        let now = Instant::now();
+        println!("- Running EXE: '{}'", EXECUTABLE);
+        let output_run = Command::new(format!("./{}", EXECUTABLE))
+        .output().expect("run error");
+        io::stdout().write_all(&output_run.stdout).expect("write stdout error");
+        io::stdout().write_all(&output_run.stderr).expect("write stderr error");
+        if CALCULATE_TIME {
+            let end_time = now.elapsed();
+            println!("\nrun duration: {} ms", end_time.as_millis());
+        }
+
     }
 
 }

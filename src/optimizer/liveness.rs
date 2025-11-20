@@ -178,13 +178,11 @@ impl LivenessAnalyzer {
             let out = self.inst_liveness[i].live_out.clone();
             
             if let Some(op) = self.instructions[i].def() {
-                println!("def: {}, out: {:?}", op.print(), out);
                 for out_var in out {
                     self.add_edge(&op.print(), &out_var);
                 }
             } 
         }
-        
     }
     fn add_edge(&mut self, src: &String, dest: &String) {
         if src == dest { return; }
@@ -194,15 +192,15 @@ impl LivenessAnalyzer {
             Variable { name:dest.to_string(), register_id: 0, spilled: false });
 
         self.interference_graph.edges.entry(src.to_string())
-        .or_insert_with(HashSet::new).insert(dest.to_string());
+        .or_default().insert(dest.to_string());
         self.interference_graph.edges.entry(dest.to_string())
-        .or_insert_with(HashSet::new).insert(src.to_string());   
+        .or_default().insert(src.to_string());   
     }
 
     fn ensure_variable_exists(&mut self, name: &String) {
         self.interference_graph.variables.entry(name.to_string()).or_insert_with(|| 
             Variable { name:name.to_string(), register_id: 0, spilled: false });
-        self.interference_graph.edges.insert(name.to_string(), HashSet::new());
+        self.interference_graph.edges.entry(name.to_string()).or_insert_with(HashSet::new);
     }
 
 
